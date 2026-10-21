@@ -1,6 +1,6 @@
 # Aura — dependências de produção (Vercel Python runtime)
 fastapi
-uvicorn[standard]
+uvicorn
 pandas
 requests
 beautifulsoup4

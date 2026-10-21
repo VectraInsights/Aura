@@ -1,7 +1,6 @@
 /* Aura — lógica da interface (vanilla JS, sem build). */
 "use strict";
 
-const API = "";
 const state = {
   perfisTriagem: [],
   perfisAnalise: [],
@@ -36,6 +35,25 @@ const fmtInt = (v) => {
 };
 
 // ------------------------------------------------------------------ API
+// O prefixo da API é descoberto em tempo de execução: o Vercel pode
+// entregar as rotas reescritas (/api/index.py/...) e um proxy pode
+// remover o prefixo. Descobrir o que responde evita tela quebrada.
+let BASE_API = "/api";
+
+async function descobrirBase() {
+  const candidatos = ["/api", "", "/api/index.py"];
+  for (const base of candidatos) {
+    try {
+      const resposta = await fetch(base + "/perfis");
+      if (resposta.ok) {
+        BASE_API = base;
+        return base;
+      }
+    } catch (_) { /* tenta o próximo */ }
+  }
+  return BASE_API;
+}
+
 async function api(caminho, opcoes) {
   const controller = new AbortController();
   const limite = opcoes && opcoes.timeoutMs ? opcoes.timeoutMs : 45000;
@@ -44,7 +62,7 @@ async function api(caminho, opcoes) {
   delete config.timeoutMs;
 
   try {
-    const resposta = await fetch(API + caminho, config);
+    const resposta = await fetch(BASE_API + caminho, config);
     let corpo = null;
     try { corpo = await resposta.json(); } catch (_) { corpo = null; }
     if (!resposta.ok) {
@@ -83,8 +101,11 @@ function setStatus(texto, classe) {
 
 // ------------------------------------------------------------------ init
 async function init() {
+  // Descobre o prefixo da API antes de qualquer chamada.
+  await descobrirBase();
+
   try {
-    const saude = await api("/api/health");
+    const saude = await api("/health");
     setStatus(saude.ia_configurada ? `IA pronta · ${saude.modelo_padrao}` : "IA não configurada",
       saude.ia_configurada ? "ok" : "fail");
   } catch (e) {
@@ -92,7 +113,7 @@ async function init() {
   }
 
   try {
-    const perfis = await api("/api/perfis");
+    const perfis = await api("/perfis");
     state.perfisTriagem = perfis.triagem;
     state.perfisAnalise = perfis.analise;
     montarSelects();
@@ -148,7 +169,7 @@ async function executarTriagem() {
     const perfil = $("perfil").value;
     const limite = $("limite").value;
     const fiis = $("incluir-fiis").checked;
-    const dados = await api(`/api/triagem?perfil=${perfil}&limite=${limite}&incluir_fiis=${fiis}`, { timeoutMs: 60000 });
+    const dados = await api(`/triagem?perfil=${perfil}&limite=${limite}&incluir_fiis=${fiis}`, { timeoutMs: 60000 });
 
     state.colunas = dados.colunas;
     state.resultados = dados.resultados;
@@ -339,7 +360,7 @@ async function analisar(ticker, perfil) {
   $("drawer-body").innerHTML = `<div class="loader"><div class="spinner"></div><p>Analisando ${ticker}…</p></div>`;
 
   try {
-    const dados = await api(`/api/analise/${encodeURIComponent(ticker)}?perfil=${per}`, { timeoutMs: 90000 });
+    const dados = await api(`/analise/${encodeURIComponent(ticker)}?perfil=${per}`, { timeoutMs: 90000 });
     renderParecer(ticker, dados);
   } catch (e) {
     $("drawer-nome").textContent = "";
@@ -356,7 +377,7 @@ async function analisarLote() {
   $("drawer-body").innerHTML = `<div class="loader"><div class="spinner"></div><p>Processando ${tickers.join(", ")}…</p></div>`;
 
   try {
-    const dados = await api("/api/analise-lote", {
+    const dados = await api("/analise-lote", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tickers, perfil: $("perfil-ia").value }),

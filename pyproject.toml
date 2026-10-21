@@ -1,0 +1,19 @@
+[project]
+name = "aura"
+version = "1.0.1"
+description = "Aura — IA de analise de investimentos na B3"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pandas",
+    "requests",
+    "beautifulsoup4",
+    "lxml",
+    "yfinance",
+    "google-genai",
+    "python-dotenv",
+]
+
+[tool.vercel]
+python-version = "3.12"

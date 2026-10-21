@@ -28,7 +28,7 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 from src.analise import Analista  # noqa: E402
-from src.config import CONFIG  # noqa: E402
+from src.config import CONFIG, VERSAO_APP  # noqa: E402
 from src.ia import PERFIS_ANALISE  # noqa: E402
 from src.ia.gemini import ErroIA  # noqa: E402
 from src.screen import PERFIS_TELA  # noqa: E402
@@ -54,15 +54,25 @@ async def normaliza_caminho(request: Request, call_next):
     O Vercel pode entregar à função o caminho já reescrito
     (/api/index.py/perfis) em vez do original (/api/perfis). Sem esta
     correção, toda chamada da interface responde 404.
+
+    A regra remove qualquer segmento com extensão .py (o "index.py" do
+    destino do rewrite) e preserva o prefixo /api.
     """
     caminho = request.scope.get("path", "")
-    for prefixo in ("/api/index.py", "/index.py"):
-        if caminho == prefixo:
-            request.scope["path"] = "/api/health"
-            break
-        if caminho.startswith(prefixo + "/"):
-            request.scope["path"] = "/api" + caminho[len(prefixo):]
-            break
+    segmentos = [s for s in caminho.split("/") if s]
+    if any(s.endswith(".py") for s in segmentos):
+        original = caminho
+        sem_py = [s for s in segmentos if not s.endswith(".py")]
+        novo = "/" + "/".join(sem_py)
+        if not novo or novo == "/api":
+            novo = "/api/health"
+        elif original.startswith("/api") and not novo.startswith("/api"):
+            novo = "/api" + novo
+        request.scope["path"] = novo
+        request.scope["raw_path"] = caminho.encode()
+    elif caminho.rstrip("/") in ("/api", "/index.py"):
+        request.scope["path"] = "/api/health"
+        request.scope["raw_path"] = caminho.encode()
     return await call_next(request)
 
 router = APIRouter()
@@ -101,13 +111,42 @@ def _exiguir_ia() -> None:
         )
 
 
+@router.get("/diagnostico")
+def diagnostico(request: Request) -> dict:
+    """Diagnóstico do ambiente — útil para conferir deploy e variáveis.
+
+    Revela qual caminho bruto chegou à função (o Vercel pode reescrever),
+    sem jamais expor o valor das chaves.
+    """
+    import platform
+    import sys
+
+    return {
+        "app": "Aura",
+        "versao": VERSAO_APP,
+        "python": sys.version.split()[0],
+        "plataforma": platform.system(),
+        "em_venv": bool(os.getenv("VERCEL")),
+        "caminho_recebido": request.scope.get("path"),
+        "caminho_bruto": request.scope.get("raw_path", b"").decode(errors="replace"),
+        "ia_configurada": CONFIG.tem_chave_ia,
+        "modelo_padrao": CONFIG.gemini_model,
+        "variaveis_presentes": sorted(
+            k for k in os.environ
+            if k.startswith(("GEMINI", "GOOGLE", "VERCEL"))
+        ),
+        "cache_dir": str(CONFIG.cache_dir),
+        "cache_escrevivel": os.access(CONFIG.cache_dir, os.W_OK) if CONFIG.cache_dir.exists() else False,
+    }
+
+
 @router.get("/health")
 def health() -> dict:
     """Verifica a configuração e a disponibilidade da IA."""
     return {
         "status": "ok",
         "app": "Aura",
-        "versao": "1.0.0",
+        "versao": VERSAO_APP,
         "ia_configurada": CONFIG.tem_chave_ia,
         "modelo_padrao": CONFIG.gemini_model,
         "modelos_fallback": CONFIG.gemini_fallbacks,

@@ -163,10 +163,11 @@ Cadastre os segredos em **Settings → Secrets and variables → Actions**:
 | Método | Rota | Descrição |
 |---|---|---|
 | `GET` | `/api/health` | Status, modelo em uso e se a IA está configurada |
+| `GET` | `/api/diagnostico` | Diagnóstico do deploy: versão, Python, variáveis presentes e o caminho bruto que chegou à função |
 | `GET` | `/api/perfis` | Perfis de triagem e de análise disponíveis |
 | `GET` | `/api/triagem?perfil=&limite=&incluir_fiis=` | Varre a B3 e devolve as aprovadas |
 | `GET` | `/api/analise/{ticker}?perfil=` | Parecer técnico da IA sobre uma empresa |
-| `POST` | `/api/analise-lote` | `{"tickers": [...], "perfil": "..."}` — até 10 empresas |
+| `POST` | `/api/analise-lote` | `{"tickers": [...], "perfil": "..."}` — até 8 empresas |
 
 ---
 
