@@ -163,7 +163,9 @@ curl -H "Accept: application/json" https://SEU-DOMINIO.vercel.app/api/perfis
 # JSON com "triagem" → tudo certo
 ```
 
-### Caminho A — integração com o GitHub (recomendado)
+### Caminho único — integração com o GitHub
+
+A Vercel detecta os pushes e publica sozinha. Não é preciso GitHub Actions.
 
 1. Crie o projeto em <https://vercel.com/new> e conecte o repositório `VectraInsights/Aura`.
 2. Cadastre as variáveis de ambiente acima (**Settings → Environment Variables**).
@@ -173,16 +175,8 @@ curl -H "Accept: application/json" https://SEU-DOMINIO.vercel.app/api/perfis
 O build é detectado automaticamente: framework **Other**, build command vazio,
 output directory `.`, e a pasta `api/` vira a função serverless.
 
-### Caminho B — GitHub Actions
-
-O workflow `.github/workflows/deploy.yml` publica a cada push na `main`.
-Cadastre os segredos em **Settings → Secrets and variables → Actions**:
-
-| Segredo | Valor |
-|---|---|
-| `VERCEL_TOKEN` | token da Vercel (<https://vercel.com/account/tokens>) |
-| `VERCEL_ORG_ID` | id da organização (Project Settings → General) |
-| `VERCEL_PROJECT_ID` | id do projeto (Project Settings → General) |
+A partir daí, todo push na `main` vira um deploy — e o commit ganha o selo
+"Vercel" no GitHub. Para deploy manual: *Deployments → Redeploy*.
 
 ---
 
