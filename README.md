@@ -10,6 +10,9 @@
 | **Filtro** | Python + pandas | Perfis Graham, Bazin, Greenblatt e afins aplicados sobre a B3 inteira |
 | **Cérebro** | Gemini (free tier) | Lê o dossiê numérico e escreve o parecer técnico estruturado |
 
+**Produção:** https://aura-psi-sage.vercel.app
+**Repositório:** https://github.com/VectraInsights/Aura
+
 ---
 
 ## Como funciona
@@ -297,7 +300,7 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 Verifique o que a aplicação está enxergando:
 
 ```bash
-curl https://seu-projeto.vercel.app/api/health
+curl https://aura-psi-sage.vercel.app/api/health
 # {"status":"ok","ia_configurada":true,"modelo_padrao":"gemini-3.6-flash",...}
 ```
 
@@ -326,7 +329,7 @@ Para deixar o preview aberto e proteger só a produção, use
 Como saber se a proteção está ativa:
 
 ```bash
-curl -H "Accept: application/json" https://SEU-DOMINIO.vercel.app/api/perfis
+curl -H "Accept: application/json" https://aura-psi-sage.vercel.app/api/perfis
 # 401 + corpo vazio  → proteção ativa
 # JSON com "triagem" → tudo certo
 ```
@@ -335,16 +338,18 @@ curl -H "Accept: application/json" https://SEU-DOMINIO.vercel.app/api/perfis
 
 A Vercel detecta os pushes e publica sozinha. Não é preciso GitHub Actions.
 
-1. Crie o projeto em <https://vercel.com/new> e conecte o repositório `VectraInsights/Aura`.
-2. Cadastre as variáveis de ambiente acima (**Settings → Environment Variables**).
-3. Deploy. O `vercel.json` já mapeia `/api/*` para a função Python e o
-   `requirements.txt` da raiz instala as dependências.
+O projeto de produção é **aura-psi-sage** (`aura-psi-sage.vercel.app`), ligado ao
+repositório `VectraInsights/Aura`.
 
-O build é detectado automaticamente: framework **Other**, build command vazio,
-output directory `.`, e a pasta `api/` vira a função serverless.
+1. O repositório já está conectado em *Vercel → aura-psi-sage → Settings → Git*.
+2. As variáveis de ambiente ficam em *Settings → Environment Variables*.
+3. Todo push na `main` vira deploy — e o commit ganha o selo "Vercel" no GitHub.
+   Para deploy manual: *Deployments → Redeploy*.
 
-A partir daí, todo push na `main` vira um deploy — e o commit ganha o selo
-"Vercel" no GitHub. Para deploy manual: *Deployments → Redeploy*.
+O `vercel.json` mapeia `/api/*` para a função Python e o `requirements.txt` da
+raiz instala as dependências. O build é detectado automaticamente: framework
+**Other**, build command vazio, output directory `.`, e a pasta `api/` vira a
+função serverless.
 
 ---
 
