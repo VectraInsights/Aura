@@ -90,6 +90,7 @@ uvicorn api.index:app --reload
 
 ```bash
 python run.py verificar                              # confere dependências e sobe a app
+python run.py senha                                  # gera senha de acesso e segredo do cookie
 python run.py perfis                                  # lista os perfis
 python run.py triagem --perfil dividendario --limite 15
 python run.py triagem --perfil graham --json          # saída completa em JSON
@@ -253,15 +254,32 @@ Vercel → seu projeto → Settings → Environment Variables → Add Variable
 | Nome | Valor | Ambiente |
 |---|---|---|
 | `GEMINI_API_KEY` | sua chave do AI Studio | **Production, Preview e Development** |
+| `APP_PASSWORD` | senha de acesso (veja `python run.py senha`) | **Production, Preview e Development** |
+| `SESSION_SECRET` | assinatura do cookie de sessão | **Production** (vale Preview) |
 | `GEMINI_MODEL` | `gemini-3.6-flash` (opcional) | Production |
 | `GEMINI_MODELOS_FALLBACK` | `gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3-flash-preview` (opcional) | Production |
 
 > Marque os três ambientes. Se a variável existir só em "Development", a produção
 > responde `503 ia_configurada: false` — a interface sobe, mas nenhum parecer sai.
 
-Para gerar uma chave: <https://aistudio.google.com/apikey> (a cota gratuita é
-automática). Depois de mudar uma variável, é preciso **redeploy** — o botão
-*Redeploy* do deploy atual.
+### Gerando a senha de acesso
+
+```bash
+python run.py senha
+```
+
+Gera uma senha forte de 16 caracteres (sem `0/O` e `1/l`, que se confundem no
+celular) e o `SESSION_SECRET`, grava os dois no `.env` local e imprime os
+valores para você copiar para a Vercel.
+
+O `SESSION_SECRET` **precisa** ser o mesmo em todos os deploys: sem ele, cada
+reinício da função invalida as sessões e você perde o login a cada cold start.
+
+Para gerar o valor à mão:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
 
 Verifique o que a aplicação está enxergando:
 

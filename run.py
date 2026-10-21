@@ -301,6 +301,53 @@ def cmd_verificar(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_senha(args: argparse.Namespace) -> int:
+    """Gera a senha de acesso e o segredo de assinatura do cookie.
+
+    Escreve no .env local (e imprime, para você copiar para a Vercel).
+    """
+    import secrets
+    import string
+
+    alfabeto = string.ascii_letters + string.digits
+    # Sem caracteres que pareçam outros (0/O, 1/l/I) e sem símbolo, para
+    # digitar no celular sem susto.
+    alfabeto = "".join(c for c in alfabeto if c not in "O0oIl1")
+    senha = "".join(secrets.choice(alfabeto) for _ in range(16))
+    segredo = secrets.token_urlsafe(48)
+
+    arquivo = RAIZ / ".env"
+    if arquivo.exists():
+        linhas = arquivo.read_text(encoding="utf-8").splitlines()
+        novos: list[str] = []
+        trocou = {"APP_PASSWORD": False, "SESSION_SECRET": False}
+        for linha in linhas:
+            chave = linha.split("=", 1)[0].strip()
+            if chave == "APP_PASSWORD":
+                novos.append(f"APP_PASSWORD={senha}")
+                trocou["APP_PASSWORD"] = True
+            elif chave == "SESSION_SECRET":
+                novos.append(f"SESSION_SECRET={segredo}")
+                trocou["SESSION_SECRET"] = True
+            else:
+                novos.append(linha)
+        if not trocou["APP_PASSWORD"]:
+            novos.append(f"APP_PASSWORD={senha}")
+        if not trocou["SESSION_SECRET"]:
+            novos.append(f"SESSION_SECRET={segredo}")
+        arquivo.write_text("\n".join(novos) + "\n", encoding="utf-8")
+        print("Atualizado no .env local.\n")
+    else:
+        print("Nao ha .env local. Crie-o com .env.example e preencha.\n")
+
+    print("\033[1mCopie estes valores para a Vercel\033[0m")
+    print("(Settings -> Environment Variables, nos 3 ambientes)\n")
+    print(f"  APP_PASSWORD     = {senha}")
+    print(f"  SESSION_SECRET  = {segredo}")
+    print()
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="aura",
@@ -343,6 +390,9 @@ def main() -> int:
 
     p = sub.add_parser("verificar", help="Confere dependências e sobe a aplicação")
     p.set_defaults(func=cmd_verificar)
+
+    p = sub.add_parser("senha", help="Gera a senha de acesso e o segredo do cookie")
+    p.set_defaults(func=cmd_senha)
 
     args = parser.parse_args()
     try:
