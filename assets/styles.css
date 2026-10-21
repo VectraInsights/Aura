@@ -502,6 +502,80 @@ tbody tr.sel { background: rgba(34, 211, 238, 0.07); }
 .regra-rodape { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 .regra-rodape .btn { width: auto; flex: none; }
 
+/* ---------------------------------------------------------------- onboarding (wizard) */
+.panel.wizard { width: min(560px, 100%); text-align: left; }
+
+.wizard-topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.wizard-topo .brand-mark.big { font-size: 30px; margin-bottom: 0; }
+.wizard-progress {
+  font-size: 11.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.wizard-trilha {
+  height: 3px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+  margin-bottom: 22px;
+}
+.wizard-barra {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  border-radius: 3px;
+  transition: width .3s ease;
+}
+
+.wizard-etapa {
+  font-size: 11px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--accent-2);
+  margin-bottom: 6px;
+}
+.wizard-titulo { font-size: 20px; line-height: 1.3; margin-bottom: 4px; }
+.wizard-ajuda { margin-bottom: 18px; }
+.wizard-resposta { min-height: 190px; }
+
+.wizard-resposta .opcoes { gap: 8px; }
+.wizard-resposta .opcao { padding: 11px 13px; font-size: 14px; }
+.wizard-resposta input[type="number"],
+.wizard-resposta input[type="text"] {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 12px 14px;
+  outline: none;
+  font-size: 16px;
+}
+.wizard-resposta input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.wizard-navegacao {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.wizard-navegacao .btn { width: auto; padding: 10px 20px; }
+.wizard-navegacao .btn.primary { min-width: 132px; }
+.wizard-espaco { flex: 1; }
+
 @media (max-width: 940px) {
   .layout { grid-template-columns: 1fr; padding: 16px; }
   .sidebar { position: static; }

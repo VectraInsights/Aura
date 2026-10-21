@@ -9,6 +9,7 @@ const state = {
   selecionados: new Set(),
   ordenacao: { chave: null, asc: true },
   ultimoPerfil: null,
+  onboarding: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -177,88 +178,6 @@ async function sair() {
   location.reload();
 }
 
-async function abrirOnboarding() {
-  let dados;
-  try {
-    dados = await api("/perfil");
-  } catch (e) {
-    return;
-  }
-  const container = $("onboarding-perguntas");
-  container.innerHTML = "";
-  const respostas = dados.respostas || {};
-
-  (dados.questoes || []).forEach((pergunta) => {
-    const bloco = el("div", "onboarding-pergunta");
-    bloco.appendChild(el("h3", null, pergunta.titulo));
-    if (pergunta.ajuda) bloco.appendChild(el("div", "ajuda", pergunta.ajuda));
-
-    if (pergunta.tipo === "numero" || pergunta.tipo === "texto") {
-      const input = document.createElement("input");
-      input.type = pergunta.tipo === "numero" ? "number" : "text";
-      input.dataset.campo = pergunta.campo;
-      input.placeholder = pergunta.placeholder || "";
-      if (pergunta.tipo === "numero") {
-        input.step = "0.1";
-        input.min = "0";
-        input.value = respostas[pergunta.campo] ?? pergunta.padrao ?? "";
-      } else {
-        input.value = respostas[pergunta.campo] ?? "";
-      }
-      bloco.appendChild(input);
-      if (pergunta.sufixo) {
-        const s = el("div", "ajuda", pergunta.sufixo);
-        s.style.marginTop = "5px";
-        bloco.appendChild(s);
-      }
-    } else {
-      const grupo = el("div", "opcoes");
-      (pergunta.opcoes || []).forEach((opcao) => {
-        const label = el("label", "opcao");
-        const radio = document.createElement("input");
-        radio.type = "radio";
-        radio.name = pergunta.campo;
-        radio.value = opcao.valor;
-        if (respostas[pergunta.campo] === opcao.valor) radio.checked = true;
-        label.appendChild(radio);
-        label.appendChild(el("span", null, opcao.rotulo));
-        grupo.appendChild(label);
-      });
-      bloco.appendChild(grupo);
-    }
-    container.appendChild(bloco);
-  });
-
-  $("onboarding-overlay").hidden = false;
-}
-
-async function salvarOnboarding(evento) {
-  evento.preventDefault();
-  const erro = $("onboarding-erro");
-  erro.hidden = true;
-  const payload = {};
-
-  document.querySelectorAll("#onboarding-perguntas [data-campo]").forEach((input) => {
-    payload[input.dataset.campo] = input.type === "number" ? Number(input.value) : input.value;
-  });
-  document.querySelectorAll('#onboarding-perguntas input[type="radio"]:checked').forEach((radio) => {
-    payload[radio.name] = radio.value;
-  });
-
-  try {
-    await api("/perfil", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      timeoutMs: 15000,
-    });
-    $("onboarding-overlay").hidden = true;
-  } catch (e) {
-    erro.textContent = e.message;
-    erro.hidden = false;
-  }
-}
-
 // ------------------------------------------------------------------ monitor
 async function carregarRegras() {
   try {
@@ -384,6 +303,176 @@ async function carregarCanais() {
       ? `canais: ${ativos.join(", ")}`
       : "sem canal configurado — só histórico local";
   } catch (_) { /* silencioso */ }
+}
+
+// ------------------------------------------------------------------ onboarding
+// Assistente de telas: uma pergunta por vez, com progresso e navegacao.
+const ETAPAS_ONBOARDING = [
+  { chave: "experiencia", etapa: "Começando" },
+  { chave: "tolerancia", etapa: "Seu risco" },
+  { chave: "horizonte", etapa: "Seu prazo" },
+  { chave: "objetivo", etapa: "Sua meta" },
+  { chave: "estrategia", etapa: "Sua estratégia" },
+  { chave: "universo", etapa: "Seu universo" },
+  { chave: "tamanho", etapa: "Sua carteira" },
+  { chave: "dy_minimo", etapa: "Seu provento" },
+  { chave: "observacoes", etapa: "Sua voz" },
+];
+
+function etapaDe(campo) {
+  const achada = ETAPAS_ONBOARDING.find((e) => e.chave === campo);
+  return achada ? achada.etapa : "";
+}
+
+async function abrirOnboarding() {
+  let dados;
+  try {
+    dados = await api("/perfil");
+  } catch (e) {
+    return;
+  }
+  state.onboarding = {
+    questoes: dados.questoes || [],
+    respostas: { ...(dados.respostas || {}) },
+    indice: 0,
+  };
+  $("onboarding-erro").hidden = true;
+  $("onboarding-overlay").hidden = false;
+  renderizarOnboarding();
+}
+
+function renderizarOnboarding() {
+  const ob = state.onboarding;
+  if (!ob || !ob.questoes.length) return;
+
+  const total = ob.questoes.length;
+  const i = Math.min(ob.indice, total - 1);
+  const pergunta = ob.questoes[i];
+  ob.indice = i;
+
+  // Progresso
+  $("ob-progress").textContent = `${i + 1} de ${total}`;
+  $("ob-barra").style.width = `${((i + 1) / total) * 100}%`;
+  $("ob-etapa").textContent = etapaDe(pergunta.campo);
+  $("ob-titulo").textContent = pergunta.titulo || "";
+  $("ob-ajuda").textContent = pergunta.ajuda || "";
+  $("ob-ajuda").hidden = !pergunta.ajuda;
+
+  // Resposta
+  const container = $("ob-resposta");
+  container.innerHTML = "";
+  const resposta = ob.respostas[pergunta.campo];
+
+  if (pergunta.tipo === "numero" || pergunta.tipo === "texto") {
+    const input = document.createElement("input");
+    input.type = pergunta.tipo === "numero" ? "number" : "text";
+    input.id = "ob-input";
+    input.placeholder = pergunta.placeholder || "";
+    if (pergunta.tipo === "numero") {
+      input.step = "0.1";
+      input.min = "0";
+      input.value = resposta ?? pergunta.padrao ?? "";
+    } else {
+      input.value = resposta ?? "";
+    }
+    input.addEventListener("input", () => {
+      ob.respostas[pergunta.campo] = input.value;
+      atualizarBotaoAvancar();
+    });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); avancarOnboarding(); }
+    });
+    container.appendChild(input);
+    if (pergunta.sufixo) {
+      const s = el("div", "hint", pergunta.sufixo);
+      s.style.marginTop = "6px";
+      container.appendChild(s);
+    }
+    setTimeout(() => input.focus(), 60);
+  } else {
+    const grupo = el("div", "opcoes");
+    (pergunta.opcoes || []).forEach((opcao) => {
+      const label = el("label", "opcao");
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = "ob-opcao";
+      radio.value = opcao.valor;
+      if (resposta === opcao.valor) radio.checked = true;
+      label.appendChild(radio);
+      label.appendChild(el("span", null, opcao.rotulo));
+      radio.addEventListener("change", () => {
+        ob.respostas[pergunta.campo] = radio.value;
+        atualizarBotaoAvancar();
+        // Avanca sozinho em perguntas de escolha: o ritmo fica fluido.
+        setTimeout(() => avancarOnboarding(), 260);
+      });
+      grupo.appendChild(label);
+    });
+    container.appendChild(grupo);
+  }
+
+  // Botoes
+  $("ob-voltar").disabled = i === 0;
+  const botao = $("ob-avancar");
+  botao.textContent = i === total - 1 ? "Concluir" : "Continuar";
+  atualizarBotaoAvancar();
+}
+
+function atualizarBotaoAvancar() {
+  const ob = state.onboarding;
+  if (!ob) return;
+  const pergunta = ob.questoes[ob.indice];
+  const valor = ob.respostas[pergunta.campo];
+  const obrigatorio = pergunta.tipo !== "texto";
+  const preenchido = obrigatorio ? String(valor ?? "").trim() !== "" : true;
+  $("ob-avancar").disabled = !preenchido;
+}
+
+async function avancarOnboarding() {
+  const ob = state.onboarding;
+  if (!ob) return;
+  const total = ob.questoes.length;
+
+  if (ob.indice >= total - 1) {
+    await salvarOnboarding();
+    return;
+  }
+  ob.indice += 1;
+  renderizarOnboarding();
+}
+
+function voltarOnboarding() {
+  const ob = state.onboarding;
+  if (!ob || ob.indice === 0) return;
+  ob.indice -= 1;
+  renderizarOnboarding();
+}
+
+async function salvarOnboarding() {
+  const ob = state.onboarding;
+  if (!ob) return;
+  const erro = $("onboarding-erro");
+  erro.hidden = true;
+
+  // Converte o campo numerico antes de enviar.
+  const payload = { ...ob.respostas };
+  const pergunta = ob.questoes[ob.indice];
+  if (pergunta && pergunta.tipo === "numero") {
+    payload[pergunta.campo] = Number(payload[pergunta.campo] ?? pergunta.padrao ?? 0);
+  }
+
+  try {
+    await api("/perfil", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      timeoutMs: 15000,
+    });
+    $("onboarding-overlay").hidden = true;
+  } catch (e) {
+    erro.textContent = e.message;
+    erro.hidden = false;
+  }
 }
 
 // ------------------------------------------------------------------ init
@@ -816,10 +905,11 @@ document.addEventListener("DOMContentLoaded", () => {
   $("drawer-backdrop").addEventListener("click", fecharDrawer);
   $("btn-docs").addEventListener("click", () => window.open("/docs", "_blank"));
   $("login-form").addEventListener("submit", fazerLogin);
-  $("onboarding-form").addEventListener("submit", salvarOnboarding);
+  $("ob-avancar").addEventListener("click", avancarOnboarding);
+  $("ob-voltar").addEventListener("click", voltarOnboarding);
+  $("ob-pular").addEventListener("click", () => { $("onboarding-overlay").hidden = true; });
   $("btn-logout").addEventListener("click", sair);
   $("btn-perfil").addEventListener("click", abrirOnboarding);
-  $("ob-pular").addEventListener("click", () => { $("onboarding-overlay").hidden = true; });
   $("regra-form").addEventListener("submit", criarRegra);
   $("btn-verificar").addEventListener("click", verificarMonitor);
   $("regra-operador").addEventListener("change", (e) => {

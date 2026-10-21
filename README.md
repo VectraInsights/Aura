@@ -217,6 +217,13 @@ conhecimento, tolerância a risco, horizonte, objetivo, estratégia de interesse
 universo (ações/FIIs), porte da carteira, dividend yield mínimo e observações
 livres.
 
+O questionário é um **assistente de telas**: uma pergunta por vez, com barra de
+progresso, rótulo da etapa ("Começando", "Seu risco", "Sua meta"…), botões
+*Voltar* e *Continuar*. Em perguntas de escolha, marcar a opção já avança para a
+próxima — o ritmo fica fluido. Nas de texto e número, o campo recebe foco e o
+Enter confirma. Dá para voltar e corrigir qualquer resposta; o botão *Meu perfil*
+reabre o assistente com as respostas já marcadas.
+
 As respostas ficam no cookie de sessão (assinado) e são **injetadas em cada
 parecer**, em duas camadas:
 

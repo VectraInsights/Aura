@@ -188,20 +188,27 @@
 
 <!-- ===================== onboarding ===================== -->
 <div class="overlay" id="onboarding-overlay" hidden>
-  <div class="panel wide">
-    <div class="brand-mark big">◈</div>
-    <h2>Vamos calibrar a Aura para você</h2>
-    <p class="hint center">
-      Estas respostas entram em cada parecer: o nível de detalhe, o que a IA prioriza
-      e o tom seguem o seu perfil de investidor. Dá para mudar quando quiser.
-    </p>
-    <form id="onboarding-form">
-      <div id="onboarding-perguntas"></div>
-      <div class="onboarding-navegacao">
-        <button class="btn ghost" id="ob-pular" type="button">Pular por agora</button>
-        <button class="btn primary" type="submit">Salvar e continuar</button>
-      </div>
-    </form>
+  <div class="panel wizard">
+    <div class="wizard-topo">
+      <div class="brand-mark big">◈</div>
+      <span class="wizard-progress" id="ob-progress">1 de 9</span>
+    </div>
+
+    <div class="wizard-trilha"><div class="wizard-barra" id="ob-barra"></div></div>
+
+    <p class="wizard-etapa" id="ob-etapa"></p>
+    <h2 class="wizard-titulo" id="ob-titulo"></h2>
+    <p class="hint wizard-ajuda" id="ob-ajuda"></p>
+
+    <div id="ob-resposta" class="wizard-resposta"></div>
+
+    <div class="wizard-navegacao">
+      <button class="btn ghost" id="ob-pular" type="button">Pular por agora</button>
+      <span class="wizard-espaco"></span>
+      <button class="btn ghost" id="ob-voltar" type="button" disabled>Voltar</button>
+      <button class="btn primary" id="ob-avancar" type="button">Continuar</button>
+    </div>
+
     <p class="erro-login" id="onboarding-erro" hidden></p>
   </div>
 </div>
