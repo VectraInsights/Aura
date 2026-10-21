@@ -403,6 +403,8 @@ function renderParecer(ticker, dados, compacto) {
   const ctx = dados.contexto || {};
 
   if (!compacto) {
+    // Limpa o loader antes de montar o relatório.
+    $("drawer-body").innerHTML = "";
     $("drawer-ticker").textContent = `${r.ticker || ticker}`;
     $("drawer-nome").textContent = ctx.nome || "";
   } else {
@@ -414,7 +416,7 @@ function renderParecer(ticker, dados, compacto) {
     $("drawer-body").appendChild(h);
   }
 
-  const alvo = compacto ? $("drawer-body") : $("drawer-body");
+  const alvo = $("drawer-body");
   const frag = document.createDocumentFragment();
 
   // veredito
