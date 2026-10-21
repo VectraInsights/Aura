@@ -285,6 +285,13 @@ def cmd_verificar(args: argparse.Namespace) -> int:
         from fastapi.testclient import TestClient
 
         from api.index import app
+        from src.webapp import app as app_compartilhado
+
+        # As duas entradas da Vercel precisam expor o MESMO app.
+        if app is not app_compartilhado:
+            print("  !! api/index.py e src/webapp.py não são o mesmo app")
+            return 1
+        print("  OK  api/index.py e api/[...slug].py expõem o mesmo app")
 
         cliente = TestClient(app, base_url="https://testserver")
         for rota in ["/api/health", "/api/sessao", "/", "/assets/app.js"]:

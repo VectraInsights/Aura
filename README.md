@@ -380,12 +380,15 @@ definida; caso contrário, a aplicação fica aberta.
 
 ```
 Aura/
-├── api/index.py           # FastAPI (função serverless da Vercel)
+├── api/
+│   ├── [...slug].py       # função serverless da rota /api/* (Vercel)
+│   └── index.py           # função da rota /api exata
 ├── assets/                # frontend estático (sem build)
 │   ├── styles.css
 │   └── app.js
 ├── index.html             # interface
 ├── src/
+│   ├── webapp.py          # a aplicação FastAPI (rotas, middlewares, login)
 │   ├── analise.py         # orquestrador: triagem → contexto → parecer
 │   ├── config.py          # configuração via .env
 │   ├── perfil.py          # questionário do investidor + instruções de estilo
@@ -421,6 +424,11 @@ Aura/
 - O Fundamentus não publica API: o scraper depende do HTML e quebra se o site mudar.
   Há cache de 12h e um fallback para o último dado conhecido quando a fonte falha, mas
   uma mudança de layout exige ajuste em `src/dados/fundamentus.py`.
+- **Rotas na Vercel.** A API vive em `api/[...slug].py`, a rota dinâmica `/api/*` que
+  **preserva o caminho original** ao app ASGI. Um `rewrite` em `vercel.json` não
+  serve: a Vercel entrega o caminho de destino e descarta o original, o que
+  colapsava todas as rotas em uma só e quebrava os POST com `405`. O
+  middleware em `src/webapp.py` normaliza as formas reescritas por segurança.
 - O yfinance não cobre todos os papéis (ex.: `BRFS3.SA` não existe). Onde falta dado
   do yfinance, o parecer sai sem preço/proventos — e a IA é instruída a declarar "n/d".
 - O dividend yield do Fundamentus é calculado sobre a cotação do dia e pode divergir
