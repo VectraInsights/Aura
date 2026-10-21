@@ -227,6 +227,117 @@ def logout(request: Request) -> dict:
     return {"autenticado": False}
 
 
+@router_protegido.get("/regras")
+def listar_regras() -> dict:
+    """Regras de monitoramento cadastradas, com o preço atual de cada ativo."""
+    from src.monitor import Motor
+
+    motor = Motor()
+    regras = motor.regras()
+    resultado = motor.avaliar(notificar=False)
+
+    for regra in regras:
+        cot = resultado.cotacoes.get(regra.ativo.strip().upper(), {})
+        regra.ultimo_preco = cot.get("preco")
+        regra.ultima_verificacao = resultado.verificado_em
+
+    return {
+        "regras": [r.to_dict() for r in regras],
+        "cotacoes": resultado.cotacoes,
+        "verificado_em": resultado.verificado_em,
+        "disparadas": [a.__dict__ for a in resultado.disparadas],
+    }
+
+
+@router_protegido.post("/regras")
+async def criar_regra(payload: dict) -> dict:
+    """Cria uma regra de monitoramento.
+
+    Corpo: {"ativo": "PETR4", "operador": ">=", "valor": 60,
+             "acao": "vender", "ativo_alvo": "PETR4", "nota": "opcional"}
+    """
+    from src.monitor import ACOES, OPERADORES, Motor, Regra, resolver
+
+    ativo = str(payload.get("ativo", "")).strip()
+    if not ativo:
+        raise HTTPException(status_code=400, detail="Informe o ativo a monitorar.")
+
+    operador = str(payload.get("operador", ">="))
+    if operador not in OPERADORES:
+        raise HTTPException(status_code=400, detail=f"Condição inválida: {operador}")
+
+    acao = str(payload.get("acao", "alertar"))
+    if acao not in ACOES:
+        raise HTTPException(status_code=400, detail=f"Ação inválida: {acao}")
+
+    try:
+        valor = float(payload.get("valor"))
+        valor2 = payload.get("valor2")
+        valor2 = float(valor2) if valor2 not in (None, "") else None
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Valores inválidos.") from exc
+
+    if operador == "entre" and valor2 is None:
+        raise HTTPException(status_code=400, detail="'entre' precisa de dois valores.")
+
+    regra = Regra(
+        ativo=ativo,
+        operador=operador,
+        valor=valor,
+        valor2=valor2,
+        acao=acao,
+        ativo_alvo=(str(payload["ativo_alvo"]).strip() if payload.get("ativo_alvo") else None),
+        nota=str(payload.get("nota", ""))[:300],
+    )
+    motor = Motor()
+    salva = motor.adicionar(regra)
+    return {"regra": salva.to_dict()}
+
+
+@router_protegido.delete("/regras/{id_regra}")
+def remover_regra(id_regra: str) -> dict:
+    """Remove uma regra."""
+    from src.monitor import Motor
+
+    removida = Motor().remover(id_regra)
+    if not removida:
+        raise HTTPException(status_code=404, detail="Regra não encontrada.")
+    return {"removida": id_regra}
+
+
+@router_protegido.get("/alertas")
+def listar_alertas(limite: int = Query(30, ge=1, le=200)) -> dict:
+    """Histórico de alertas disparados."""
+    from src.monitor import Motor
+
+    return {"alertas": Motor().historico_alertas(limite=limite)}
+
+
+@router_protegido.post("/monitor/verificar")
+def verificar_monitor() -> dict:
+    """Roda uma verificação agora e dispara os alertas pendentes."""
+    from src.monitor import Motor
+
+    resultado = Motor().avaliar(notificar=True)
+    return resultado.to_dict()
+
+
+@router_protegido.get("/monitor/canais")
+def canais_monitor() -> dict:
+    """Quais canais de aviso estão configurados."""
+    from src.monitor import Motor
+
+    motor = Motor()
+    n = motor.notificador
+    return {
+        "telegram": bool(n.telegram_token and n.telegram_chat_id),
+        "whatsapp_callmebot": bool(n.callmebot_phone and n.callmebot_apikey),
+        "whatsapp_cloud": bool(n.whatsapp_token and n.whatsapp_phone_id),
+        "webhook": bool(n.webhook_url),
+        "historico_local": True,
+    }
+
+
 @router_protegido.get("/perfil")
 def perfil_atual(request: Request) -> dict:
     """Questionário do onboarding + as respostas já dadas."""

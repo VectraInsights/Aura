@@ -245,6 +245,133 @@ async function salvarOnboarding(evento) {
   }
 }
 
+// ------------------------------------------------------------------ monitor
+async function carregarRegras() {
+  try {
+    const dados = await api("/regras");
+    state.regras = dados.regras || [];
+    state.cotacoes = dados.cotacoes || {};
+    renderRegras();
+  } catch (e) {
+    const box = $("regra-erro");
+    box.textContent = e.message;
+    box.hidden = false;
+  }
+}
+
+function renderRegras() {
+  const lista = $("regra-lista");
+  lista.innerHTML = "";
+  const { regras = [], cotacoes = {} } = state;
+
+  if (!regras.length) {
+    lista.appendChild(el("div", "hint", "Nenhuma regra ainda. Crie a primeira acima."));
+    return;
+  }
+
+  regras.forEach((regra) => {
+    const cot = cotacoes[regra.ativo.toUpperCase()] || {};
+    const item = el("div", `regra-item${regra.armada ? "" : " disparada"}`);
+
+    const topo = el("div", "regra-topo");
+    topo.appendChild(el("span", "regra-desc", `${regra.ativo} ${regra.operador} ${regra.valor}`));
+    const direita = el("div", "regra-topo");
+    direita.appendChild(el("span", "regra-preco",
+      cot.preco != null ? cot.preco.toLocaleString("pt-BR", { maximumFractionDigits: 4 }) : "—"));
+    const remover = el("button", "regra-remover", "✕");
+    remover.addEventListener("click", () => removerRegra(regra.id));
+    direita.appendChild(remover);
+    topo.appendChild(direita);
+    item.appendChild(topo);
+
+    const estado = el("div", "regra-estado");
+    estado.innerHTML =
+      `<span class="${regra.armada ? "" : "gatilho"}">${regra.armada ? "aguardando" : "gatilho atingido"}</span>` +
+      ` · ação: ${regra.acao}${regra.ativo_alvo ? " " + regra.ativo_alvo : ""}` +
+      (cot.fonte ? ` · fonte: ${cot.fonte}` : "");
+    item.appendChild(estado);
+
+    lista.appendChild(item);
+  });
+}
+
+async function removerRegra(id) {
+  try {
+    await api(`/regras/${id}`, { method: "DELETE", timeoutMs: 15000 });
+    await carregarRegras();
+  } catch (e) {
+    const box = $("regra-erro");
+    box.textContent = e.message;
+    box.hidden = false;
+  }
+}
+
+async function criarRegra(evento) {
+  evento.preventDefault();
+  const box = $("regra-erro");
+  box.hidden = true;
+
+  const operador = $("regra-operador").value;
+  const corpo = {
+    ativo: $("regra-ativo").value.trim(),
+    operador,
+    valor: Number($("regra-valor").value),
+    acao: $("regra-acao").value,
+    ativo_alvo: $("regra-alvo").value.trim() || null,
+    nota: $("regra-nota").value.trim(),
+  };
+  if (operador === "entre") corpo.valor2 = Number($("regra-valor2").value);
+
+  try {
+    await api("/regras", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(corpo),
+      timeoutMs: 20000,
+    });
+    $("regra-ativo").value = "";
+    $("regra-valor").value = "";
+    $("regra-valor2").value = "";
+    $("regra-alvo").value = "";
+    $("regra-nota").value = "";
+    await carregarRegras();
+  } catch (e) {
+    box.textContent = e.message;
+    box.hidden = false;
+  }
+}
+
+async function verificarMonitor() {
+  const btn = $("btn-verificar");
+  btn.disabled = true;
+  btn.textContent = "Verificando…";
+  try {
+    const r = await api("/monitor/verificar", { method: "POST", timeoutMs: 60000 });
+    const n = (r.disparadas || []).length;
+    $("canais-info").textContent = n
+      ? `${n} alerta(s) disparado(s)`
+      : `nenhum gatilho atingido · ${r.verificado_em.replace("T", " ")}`;
+    await carregarRegras();
+  } catch (e) {
+    $("canais-info").textContent = e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Verificar agora";
+  }
+}
+
+async function carregarCanais() {
+  try {
+    const c = await api("/monitor/canais");
+    const ativos = Object.entries(c)
+      .filter(([k, v]) => v && k !== "historico_local")
+      .map(([k]) => k);
+    $("canais-info").textContent = ativos.length
+      ? `canais: ${ativos.join(", ")}`
+      : "sem canal configurado — só histórico local";
+  } catch (_) { /* silencioso */ }
+}
+
 // ------------------------------------------------------------------ init
 async function init() {
   // Descobre o prefixo da API antes de qualquer chamada.
@@ -265,6 +392,8 @@ async function init() {
       state.perfisTriagem = perfis.triagem;
       state.perfisAnalise = perfis.analise;
       montarSelects();
+      await carregarRegras();
+      await carregarCanais();
     }
   } catch (e) {
     mostrarErro(`Não foi possível carregar os perfis: ${e.message}`);
@@ -677,6 +806,11 @@ document.addEventListener("DOMContentLoaded", () => {
   $("btn-logout").addEventListener("click", sair);
   $("btn-perfil").addEventListener("click", abrirOnboarding);
   $("ob-pular").addEventListener("click", () => { $("onboarding-overlay").hidden = true; });
+  $("regra-form").addEventListener("submit", criarRegra);
+  $("btn-verificar").addEventListener("click", verificarMonitor);
+  $("regra-operador").addEventListener("change", (e) => {
+    $("regra-valor2").classList.toggle("oculto", e.target.value !== "entre");
+  });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") fecharDrawer(); });
   init();
 });

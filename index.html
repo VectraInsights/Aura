@@ -68,6 +68,47 @@
       <p class="hint">Clique em “Analisar” numa linha para o parecer individual.</p>
     </section>
 
+    <section class="card">
+      <h2>Monitor de regras</h2>
+      <p class="hint">Avise quando um ativo cruzar um preço. Você decide a ordem — o Aura só avisa.</p>
+
+      <form id="regra-form" class="regra-form">
+        <div class="regra-linha">
+          <input type="text" id="regra-ativo" placeholder="PETR4, BTC, USDBRL, ^BVSP…" required>
+        </div>
+        <div class="regra-linha">
+          <select id="regra-operador">
+            <option value=">=">atinge ou ultrapassa</option>
+            <option value="<=">atinge ou fica abaixo</option>
+            <option value=">">ultrapassa</option>
+            <option value="<">fica abaixo</option>
+            <option value="entre">fica entre dois valores</option>
+          </select>
+          <input type="number" id="regra-valor" step="any" placeholder="preço" required>
+          <input type="number" id="regra-valor2" step="any" placeholder="até" class="oculto">
+        </div>
+        <div class="regra-linha">
+          <select id="regra-acao">
+            <option value="vender">Vender</option>
+            <option value="comprar">Comprar</option>
+            <option value="alertar">Alertar</option>
+            <option value="revisar">Revisar posição</option>
+          </select>
+          <input type="text" id="regra-alvo" placeholder="ativo alvo (opcional)">
+        </div>
+        <input type="text" id="regra-nota" placeholder="observação (opcional)">
+        <button class="btn primary" type="submit">Criar regra</button>
+      </form>
+
+      <div class="regra-lista" id="regra-lista"></div>
+      <p class="erro-login" id="regra-erro" hidden></p>
+
+      <div class="regra-rodape">
+        <button class="btn small" id="btn-verificar" type="button">Verificar agora</button>
+        <span class="hint" id="canais-info"></span>
+      </div>
+    </section>
+
     <section class="card about">
       <h2>Como funciona</h2>
       <ol>

@@ -148,6 +148,82 @@ def cmd_saude(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_monitor(args: argparse.Namespace) -> int:
+    """Roda o monitor de regras em laço contínuo."""
+    import time
+
+    from src.monitor import Motor
+
+    motor = Motor()
+    print(f"\n\033[1mMonitor Aura\033[0m — verificando a cada {args.intervalo}s (Ctrl+C para sair)")
+    canais = []
+    if motor.notificador.telegram_token:
+        canais.append("telegram")
+    if motor.notificador._whatsapp_disponivel():
+        canais.append("whatsapp")
+    if motor.notificador.webhook_url:
+        canais.append("webhook")
+    print(f"Canais de aviso: {', '.join(canais) if canais else 'somente histórico local'}")
+    print(f"Regras: {len(motor.regras())}\n")
+
+    while True:
+        try:
+            resultado = motor.avaliar()
+            for alerta in resultado.disparadas:
+                print(
+                    f"\033[33m⚡ {alerta.descricao}\033[0m — {alerta.preco:,.4f} "
+                    f"[{', '.join(alerta.canais) if alerta.canais else 'histórico'}]"
+                )
+            if not resultado.disparadas:
+                cotacoes = ", ".join(
+                    f"{k}={v['preco']:.4f}" for k, v in resultado.cotacoes.items() if v.get("preco")
+                )
+                print(f"  {resultado.verificado_em}  {cotacoes}")
+        except KeyboardInterrupt:
+            print("\nInterrompido.")
+            return 0
+        except Exception as exc:  # noqa: BLE001
+            print(f"  erro no ciclo: {exc}")
+        time.sleep(args.intervalo)
+
+
+def cmd_regras(args: argparse.Namespace) -> int:
+    """Lista as regras de monitoramento."""
+    from src.monitor import Motor
+
+    motor = Motor()
+    regras = motor.regras()
+    if not regras:
+        print("Nenhuma regra cadastrada.")
+        return 0
+
+    _linha(f"Regras de monitoramento ({len(regras)})")
+    for r in regras:
+        estado = "ARMADA" if r.armed else "DISPARADA"
+        preco = f"{r.ultimo_preco:.4f}" if r.ultimo_preco is not None else "n/d"
+        print(f"\n  [{r.id}] {r.descrever()}")
+        print(f"      estado: {estado} | último preço: {preco} | criada em {r.criada_em}")
+        if r.ultimo_trigger:
+            print(f"      último disparo: {r.ultimo_trigger}")
+    return 0
+
+
+def cmd_alertas(args: argparse.Namespace) -> int:
+    """Mostra o histórico de alertas."""
+    from src.monitor import Motor
+
+    motor = Motor()
+    alertas = motor.historico_alertas(limite=args.limite)
+    if not alertas:
+        print("Nenhum alerta registrado.")
+        return 0
+
+    _linha(f"Alertas ({len(alertas)})")
+    for a in alertas:
+        print(f"  {a.get('em')}  {a.get('descricao')}  → R$ {a.get('preco')}  [{', '.join(a.get('canais') or []) or 'histórico'}]")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="aura",
@@ -176,6 +252,17 @@ def main() -> int:
 
     p = sub.add_parser("saude", help="Verifica a configuração e a IA")
     p.set_defaults(func=cmd_saude)
+
+    p = sub.add_parser("monitor", help="Monitora as regras de preço em laço contínuo")
+    p.add_argument("--intervalo", type=int, default=60, help="Segundos entre verificações")
+    p.set_defaults(func=cmd_monitor)
+
+    p = sub.add_parser("regras", help="Lista as regras de monitoramento")
+    p.set_defaults(func=cmd_regras)
+
+    p = sub.add_parser("alertas", help="Histórico de alertas disparados")
+    p.add_argument("--limite", type=int, default=20)
+    p.set_defaults(func=cmd_alertas)
 
     args = parser.parse_args()
     try:

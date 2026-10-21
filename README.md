@@ -100,6 +100,87 @@ python run.py saude                                   # testa chave e modelo
 
 ---
 
+## Monitor de regras
+
+O Aura acompanha ativos e avisa quando um preço é cruzado. A regra **não executa
+ordens** — ela avisa, e quem decide agir é você.
+
+```
+dolar  <= 4,80   →  comprar PETR4
+PETR4  >= 65     →  vender
+BTC    >= 90.000 →  alertar
+```
+
+Vale para **qualquer instrumento com cotação** — ação da B3, FII, dólar, euro,
+cripto, índice, commodity ou qualquer símbolo do Yahoo Finance:
+
+| Ativo | Como escrever | Símbolo usado |
+|---|---|---|
+| Ação B3 | `PETR4`, `ITSA4`, `TAEE11` | `PETR4.SA` (completa com `.SA`) |
+| FII | `HGLG11`, `MXRF11` | `HGLG11.SA` |
+| Dólar / euro | `dolar`, `euro`, `USDBRL` | `USDBRL=X` |
+| Cripto | `BTC`, `ETH`, `SOL` | `BTC-USD` |
+| Índice | `^BVSP`, `IBOV`, `^GSPC` | como é |
+| Commodity | `Ouro`, `Petroleo`, `Cafe` | `GC=F`, `BZ=F`, `KC=F` |
+
+Fontes de preço: **yfinance** (tempo real) com fallback para a **AwesomeAPI**
+— que cobre cripto em Real (BTC-BRL), ausente no Yahoo.
+
+### Como rodar
+
+```bash
+python run.py monitor --intervalo 60      # verifica a cada 60s
+python run.py regras                      # lista as regras e o último preço
+python run.py alertas                     # histórico de disparos
+```
+
+Na interface web, o painel **Monitor de regras** (canto da tela) cria, edita e
+remove regras, mostra o preço ao vivo de cada uma e tem o botão *Verificar agora*.
+
+### Onde o monitor roda
+
+| Onde | Como | Observação |
+|---|---|---|
+| Seu computador | `python run.py monitor` | Roda enquanto o PC estiver ligado |
+| Vercel | botão *Verificar agora* | Sob demanda — a Vercel não roda processo contínuo no plano grátis |
+| Container / VPS | `python run.py monitor` | Railway, Render, Fly.io, uma VPS — o monitor é um processo normal |
+
+O código do monitor é o mesmo nos três casos. Para o ALWAYS-ON, o processo é o
+que importa — não o servidor web.
+
+### Anti-spam (histerese)
+
+Uma regra só avisa na **transição** "não atingido → atingido". Se o preço
+continua acima do gatilho, não repete o aviso a cada ciclo. A regra se rearma
+sozinha quando o preço volta a cruzar o nível pelo outro lado.
+
+### Canais de aviso
+
+Configure no `.env` (ou nas variáveis da Vercel):
+
+| Canal | Variáveis | Observação |
+|---|---|---|
+| **Telegram** | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Bot via @BotFather. Push de verdade. |
+| **WhatsApp (CallMeBot)** | `CALLMEBOT_PHONE`, `CALLMEBOT_APIKEY` | **Grátis**, sem cadastro de empresa. Envie `/start` para o bot uma vez e pegue a apikey em <https://www.callmebot.com/whatsapp.php> |
+| **WhatsApp (Meta Cloud API)** | `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TEMPLATE` | WhatsApp Business. A Meta exige template aprovado (com variável `{{1}}`). |
+| **WhatsApp (link wa.me)** | `WHATSAPP_DESTINO` | Sem API: o alerta traz um link que abre o WhatsApp com a mensagem escrita. |
+| **Webhook genérico** | `WEBHOOK_URL` | POST JSON — n8n, Make, Discord, Slack, qualquer automação. |
+| **Histórico local** | — | Sempre ativo: `data/alertas.jsonl`. |
+
+Vários canais podem coexistir: o alerta vai para todos os configurados.
+
+### Onde as regras ficam
+
+| Backend | Quando | Variáveis |
+|---|---|---|
+| Arquivo JSON | Padrão — funciona em qualquer disco | `REGRAS_ARQUIVO` |
+| Upstash Redis | Quando a Vercel e o monitor estão em máquinas diferentes | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` |
+
+Sem Upstash, as regras ficam no disco do host onde o monitor roda. Na Vercel o
+disco é efêmero — use o Redis, ou o *Verificar agora* da interface.
+
+---
+
 ## Login e perfil do investidor
 
 Sem Supabase e sem banco de dados: **senha única + cookie de sessão assinado**
@@ -238,6 +319,12 @@ A partir daí, todo push na `main` vira um deploy — e o commit ganha o selo
 | `POST` | `/api/logout` | Encerra a sessão |
 | `GET` | `/api/perfil` | Questionário do onboarding + as respostas dadas |
 | `POST` | `/api/perfil` | Salva as respostas do onboarding |
+| `GET` | `/api/regras` | Regras de monitoramento com o preço atual de cada ativo |
+| `POST` | `/api/regras` | Cria uma regra: `{ativo, operador, valor, valor2, acao, ativo_alvo, nota}` |
+| `DELETE` | `/api/regras/{id}` | Remove uma regra |
+| `GET` | `/api/alertas` | Histórico de alertas disparados |
+| `POST` | `/api/monitor/verificar` | Verifica agora e dispara o que estiver em gatilho |
+| `GET` | `/api/monitor/canais` | Quais canais de aviso estão configurados |
 | `GET` | `/api/perfis` | Perfis de triagem e de análise disponíveis |
 | `GET` | `/api/triagem?perfil=&limite=&incluir_fiis=` | Varre a B3 (ações e, opcionalmente, FIIs) |
 | `GET` | `/api/analise/{ticker}?perfil=` | Parecer técnico da IA sobre uma empresa |
@@ -283,6 +370,11 @@ Aura/
 │   ├── ia/
 │   │   ├── gemini.py      # cliente Gemini com fallback e retry
 │   │   └── prompt.py      # prompt e schema de saída
+│   ├── monitor/
+│   │   ├── regras.py      # modelo de regra + persistência (arquivo ou Redis)
+│   │   ├── precos.py      # cotação de qualquer ativo (yfinance + AwesomeAPI)
+│   │   ├── notificador.py # Telegram, WhatsApp e webhook
+│   │   └── motor.py       # avaliação com histerese e histórico
 │   └── screen/
 │       └── criterios.py   # perfis de triagem e pontuação
 ├── run.py                 # CLI
