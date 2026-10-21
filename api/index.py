@@ -49,29 +49,47 @@ app.add_middleware(
 
 @app.middleware("http")
 async def normaliza_caminho(request: Request, call_next):
-    """Normaliza o caminho quando o roteador reescreve a URL.
+    """Normaliza o caminho recebido pela função.
 
-    O Vercel pode entregar à função o caminho já reescrito
-    (/api/index.py/perfis) em vez do original (/api/perfis). Sem esta
-    correção, toda chamada da interface responde 404.
-
-    A regra remove qualquer segmento com extensão .py (o "index.py" do
-    destino do rewrite) e preserva o prefixo /api.
+    O Vercel pode entregar o caminho já reescrito (/api/index.py/x, /api/api/x)
+    ou sem o prefixo (/x). Em vez de adivinhar formatos, a regra é única:
+    remove segmentos com .py e passa a valer o ÚLTIMO "/api" do caminho.
+    Qualquer caminho que não contenha "/api" recebe o prefixo na frente.
     """
     caminho = request.scope.get("path", "")
+    if caminho in ("", "/"):
+        return await call_next(request)  # "/" é o frontend, servido pelo StaticFiles
+
     segmentos = [s for s in caminho.split("/") if s]
-    if any(s.endswith(".py") for s in segmentos):
-        original = caminho
-        sem_py = [s for s in segmentos if not s.endswith(".py")]
-        novo = "/" + "/".join(sem_py)
-        if not novo or novo == "/api":
-            novo = "/api/health"
-        elif original.startswith("/api") and not novo.startswith("/api"):
-            novo = "/api" + novo
-        request.scope["path"] = novo
-        request.scope["raw_path"] = caminho.encode()
-    elif caminho.rstrip("/") in ("/api", "/index.py"):
+    if not segmentos:
         request.scope["path"] = "/api/health"
+        return await call_next(request)
+
+    # Requisição de arquivo estático (app.js, styles.css, logo.png...).
+    ultimo = segmentos[-1].lower()
+    if "." in ultimo and not ultimo.endswith(".py"):
+        if ultimo.rsplit(".", 1)[-1] in {
+            "js", "css", "html", "htm", "png", "jpg", "jpeg", "gif", "svg",
+            "ico", "json", "txt", "md", "woff", "woff2", "ttf", "map", "webp",
+        }:
+            return await call_next(request)
+
+    segmentos = [s for s in segmentos if not s.endswith(".py")]
+    if not segmentos:
+        request.scope["path"] = "/api/health"
+        return await call_next(request)
+
+    if "api" in segmentos:
+        # Vale o último "/api": /api/api/x -> /api/x
+        indice = len(segmentos) - 1 - segmentos[::-1].index("api")
+        novo = "/" + "/".join(segmentos[indice:])
+        if novo == "/api":
+            novo = "/api/health"
+    else:
+        novo = "/api/" + "/".join(segmentos)
+
+    if novo != caminho:
+        request.scope["path"] = novo
         request.scope["raw_path"] = caminho.encode()
     return await call_next(request)
 

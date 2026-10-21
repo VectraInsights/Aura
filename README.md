@@ -135,6 +135,34 @@ curl https://seu-projeto.vercel.app/api/health
 
 `"ia_configurada": false` = a variável não chegou no ambiente certo.
 
+### Deployment Protection (a causa mais comum de "Not Found" / 401)
+
+A Vercel pode proteger o projeto com **Vercel Authentication**, que exige login
+para acessar qualquer rota — inclusive a API. O sintoma é a interface abrir e as
+chamadas falharem.
+
+```
+GET /api/perfis  →  401 (XHR)   ou 302 → /login (navegador)
+```
+
+Para um projeto pessoal como o Aura, a opção é desligar a proteção:
+
+```
+Vercel → seu projeto → Settings → Deployment Protection → Vercel Authentication → Disabled
+```
+
+Para deixar o preview aberto e proteger só a produção, use
+*Only Production Protection* e adicione um *Protection Bypass for Automation*
+(token no header `x-vercel-protection-bypass`), útil para CI.
+
+Como saber se a proteção está ativa:
+
+```bash
+curl -H "Accept: application/json" https://SEU-DOMINIO.vercel.app/api/perfis
+# 401 + corpo vazio  → proteção ativa
+# JSON com "triagem" → tudo certo
+```
+
 ### Caminho A — integração com o GitHub (recomendado)
 
 1. Crie o projeto em <https://vercel.com/new> e conecte o repositório `VectraInsights/Aura`.

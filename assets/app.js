@@ -44,8 +44,12 @@ async function descobrirBase() {
   const candidatos = ["/api", "", "/api/index.py"];
   for (const base of candidatos) {
     try {
-      const resposta = await fetch(base + "/perfis");
-      if (resposta.ok) {
+      const resposta = await fetch(base + "/perfis", { headers: { Accept: "application/json" } });
+      if (!resposta.ok) continue;
+      const texto = await resposta.text();
+      // Confirma que e mesmo a API: a protecao da Vercel devolve HTML de login.
+      const corpo = JSON.parse(texto);
+      if (corpo && Array.isArray(corpo.triagem)) {
         BASE_API = base;
         return base;
       }
@@ -63,10 +67,18 @@ async function api(caminho, opcoes) {
 
   try {
     const resposta = await fetch(BASE_API + caminho, config);
+    const texto = await resposta.text();
     let corpo = null;
-    try { corpo = await resposta.json(); } catch (_) { corpo = null; }
+    try { corpo = texto ? JSON.parse(texto) : null; } catch (_) { corpo = null; }
+
     if (!resposta.ok) {
-      throw new Error((corpo && corpo.detail) || `HTTP ${resposta.status}`);
+      // Mostra o que veio de verdade: status + trecho do corpo. Sem isso,
+      // um 401 (protecao da Vercel) e um 404 (rota) ficam indistinguiveis.
+      const detalhe = (corpo && (corpo.detail || (corpo.error && corpo.error.message))) || null;
+      const trecho = texto ? texto.slice(0, 160).replace(/\s+/g, " ") : "";
+      let mensagem = detalhe ? `${detalhe} (HTTP ${resposta.status})` : `HTTP ${resposta.status}`;
+      if (!detalhe && trecho) mensagem += ` — ${trecho}`;
+      throw new Error(mensagem);
     }
     return corpo;
   } catch (e) {
