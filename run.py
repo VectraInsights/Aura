@@ -224,6 +224,83 @@ def cmd_alertas(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_verificar(args: argparse.Namespace) -> int:
+    """Auto-teste: confere dependências declaradas e sobe a aplicação.
+
+    Existe porque uma dependência faltando no requirements.txt só aparece
+    no build da Vercel, como 500 FUNCTION_INVOCATION_FAILED. Aqui isso vira
+    um erro claro, em segundos, antes do deploy.
+    """
+    import importlib
+
+    print("\n\033[1mVerificação do Aura\033[0m\n")
+
+    # 1) Toda dependência usada está declarada no requirements.txt?
+    requisitos = RAIZ / "requirements.txt"
+    declarados: set[str] = set()
+    if requisitos.exists():
+        for linha in requisitos.read_text(encoding="utf-8").splitlines():
+            linha = linha.split("#")[0].strip()
+            if linha:
+                declarados.add(linha.split("[")[0].split("=")[0].split(">")[0].split("<")[0].strip().lower())
+
+    # módulo importado -> nome do pacote no PyPI
+    modulos = {
+        "fastapi": "fastapi",
+        "starlette": "fastapi",
+        "pandas": "pandas",
+        "requests": "requests",
+        "bs4": "beautifulsoup4",
+        "lxml": "lxml",
+        "yfinance": "yfinance",
+        "google.genai": "google-genai",
+        "dotenv": "python-dotenv",
+        "itsdangerous": "itsdangerous",
+    }
+
+    faltando: list[str] = []
+    print("Dependências:")
+    for modulo, pacote in modulos.items():
+        try:
+            importlib.import_module(modulo)
+            instalado = True
+        except ImportError:
+            instalado = False
+            faltando.append(pacote)
+        declarado = pacote in declarados
+        marca = "OK " if instalado and declarado else "!! "
+        print(f"  {marca}{modulo:16s} instalado={'sim' if instalado else 'NÃO':4s} "
+              f"declarado={'sim' if declarado else 'NÃO'}")
+        if instalado and not declarado:
+            faltando.append(f"{pacote} (instalado mas fora do requirements.txt)")
+
+    if faltando:
+        print(f"\n\033[31mProblemas:\033[0m {', '.join(sorted(set(faltando)))}")
+        print("Rode: pip install -r requirements.txt")
+        return 1
+
+    # 2) A aplicação sobe e responde?
+    print("\nAplicação:")
+    try:
+        from fastapi.testclient import TestClient
+
+        from api.index import app
+
+        cliente = TestClient(app)
+        for rota in ["/api/health", "/api/sessao", "/", "/assets/app.js"]:
+            resposta = cliente.get(rota)
+            ok = resposta.status_code == 200
+            print(f"  {'OK ' if ok else '!! '} {rota} -> {resposta.status_code}")
+            if not ok:
+                return 1
+    except Exception as exc:  # noqa: BLE001
+        print(f"  !! a aplicação não sobe: {type(exc).__name__}: {exc}")
+        return 1
+
+    print("\n\033[32mTudo certo.\033[0m")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="aura",
@@ -263,6 +340,9 @@ def main() -> int:
     p = sub.add_parser("alertas", help="Histórico de alertas disparados")
     p.add_argument("--limite", type=int, default=20)
     p.set_defaults(func=cmd_alertas)
+
+    p = sub.add_parser("verificar", help="Confere dependências e sobe a aplicação")
+    p.set_defaults(func=cmd_verificar)
 
     args = parser.parse_args()
     try:

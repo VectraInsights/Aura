@@ -89,6 +89,7 @@ uvicorn api.index:app --reload
 ### Linha de comando
 
 ```bash
+python run.py verificar                              # confere dependências e sobe a app
 python run.py perfis                                  # lista os perfis
 python run.py triagem --perfil dividendario --limite 15
 python run.py triagem --perfil graham --json          # saída completa em JSON
@@ -96,7 +97,15 @@ python run.py analisar PETR4 --perfil qualidade
 python run.py analisar PETR4 VALE3 --perfil dividendario
 python run.py contexto PETR4                          # todos os números coletados
 python run.py saude                                   # testa chave e modelo
+python run.py monitor --intervalo 60                  # monitor de regras
+python run.py regras                                  # lista as regras
+python run.py alertas                                 # histórico de disparos
 ```
+
+> **`run.py verificar`** existe porque uma dependência faltando no
+> `requirements.txt` só aparece no build da Vercel, como
+> `500 FUNCTION_INVOCATION_FAILED`. O comando confere que todo pacote usado
+> está declarado **e** que a aplicação sobe — em segundos, antes do deploy.
 
 ---
 
