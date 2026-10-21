@@ -100,6 +100,53 @@ python run.py saude                                   # testa chave e modelo
 
 ---
 
+## Login e perfil do investidor
+
+Sem Supabase e sem banco de dados: **senha única + cookie de sessão assinado**
+(`itsdangerous`, que já vem com o Starlette).
+
+| Variável | Para que serve |
+|---|---|
+| `APP_PASSWORD` | Senha de acesso. **Vazio = aplicação aberta** (sem login). |
+| `SESSION_SECRET` | Chave de assinatura do cookie. Sem ela, a sessão morre a cada reinício. |
+| `SESSION_MAX_AGE` | Validade da sessão em segundos (padrão 7 dias). |
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"   # gera a SESSION_SECRET
+```
+
+O arquivo `.env` é só para uso local. Na Vercel, as duas variáveis vão em
+*Settings → Environment Variables* (nos três ambientes).
+
+### Onboarding: a IA pergunta quem você é
+
+Na primeira entrada, o Aura faz um questionário de 9 perguntas — nível de
+conhecimento, tolerância a risco, horizonte, objetivo, estratégia de interesse,
+universo (ações/FIIs), porte da carteira, dividend yield mínimo e observações
+livres.
+
+As respostas ficam no cookie de sessão (assinado) e são **injetadas em cada
+parecer**, em duas camadas:
+
+1. **Contexto** — a IA recebe um bloco "Quem é o investidor" com os fatos.
+2. **Instruções de estilo** — a IA ajusta o comportamento:
+
+| Resposta | Efeito no parecer |
+|---|---|
+| Iniciante | Explica cada termo na primeira ocorrência (o que é ROIC, o que é payout), usa analogias |
+| Intermediário | Vocabulário técnico, mas explica o que depende de julgamento |
+| Avançado | Direto e técnico; foca no não óbvio e nos riscos escondidos |
+| Tolerância baixa | Destaca o que pode dar errado e a perda potencial |
+| Objetivo renda | Avalia sustentabilidade dos proventos como questão central |
+| Objetivo valorização | Foca em margem de segurança e no que precisa mudar no thesis |
+| Horizonte curto | Avisa sobre risco de evento, liquidez e janelas de saída ruins |
+| Só ações | Ignora FIIs ou avisa quando um papel da lista for na verdade um fundo |
+
+O botão **Meu perfil** (canto superior direito) reabre o questionário a
+qualquer momento.
+
+---
+
 ## Deploy na Vercel
 
 ### Onde a chave do Gemini vai
@@ -186,10 +233,18 @@ A partir daí, todo push na `main` vira um deploy — e o commit ganha o selo
 |---|---|---|
 | `GET` | `/api/health` | Status, modelo em uso e se a IA está configurada |
 | `GET` | `/api/diagnostico` | Diagnóstico do deploy: versão, Python, variáveis presentes e o caminho bruto que chegou à função |
+| `GET` | `/api/sessao` | Estado da sessão (autenticado? login ativo? perfil preenchido?) |
+| `POST` | `/api/login` | `{"senha": "..."}` — autentica e abre a sessão |
+| `POST` | `/api/logout` | Encerra a sessão |
+| `GET` | `/api/perfil` | Questionário do onboarding + as respostas dadas |
+| `POST` | `/api/perfil` | Salva as respostas do onboarding |
 | `GET` | `/api/perfis` | Perfis de triagem e de análise disponíveis |
-| `GET` | `/api/triagem?perfil=&limite=&incluir_fiis=` | Varre a B3 e devolve as aprovadas |
+| `GET` | `/api/triagem?perfil=&limite=&incluir_fiis=` | Varre a B3 (ações e, opcionalmente, FIIs) |
 | `GET` | `/api/analise/{ticker}?perfil=` | Parecer técnico da IA sobre uma empresa |
 | `POST` | `/api/analise-lote` | `{"tickers": [...], "perfil": "..."}` — até 8 empresas |
+
+Rotas marcadas como protegidas exigem sessão quando `APP_PASSWORD` está
+definida; caso contrário, a aplicação fica aberta.
 
 ---
 
@@ -219,6 +274,7 @@ Aura/
 ├── src/
 │   ├── analise.py         # orquestrador: triagem → contexto → parecer
 │   ├── config.py          # configuração via .env
+│   ├── perfil.py          # questionário do investidor + instruções de estilo
 │   ├── util.py            # parsing e formatação pt-BR
 │   ├── dados/
 │   │   ├── fundamentus.py  # fundamentalistas da B3
@@ -250,6 +306,14 @@ Aura/
   do yfinance, o parecer sai sem preço/proventos — e a IA é instruída a declarar "n/d".
 - O dividend yield do Fundamentus é calculado sobre a cotação do dia e pode divergir
   do provento efetivamente pago (o Aura cruza com a série real de dividendos).
+- **FIIs e ações não se misturam.** O Fundamentus mantém os fundos (383) em tabela
+  separada, com métricas próprias. Na triagem, um FII passa só pelos filtros que
+  fazem sentido para fundo (dividend yield, P/VP, liquidez) — P/L, ROE e EV/EBITDA
+  de fundo não são comparáveis aos de uma companhia aberta.
+- **Cuidado com o campo "Tipo" do Fundamentus**: ele é a *classe* da ação
+  (ON, PN, ON NM, PN N2…), não um marcador de fundo. "ON NM" aparece em VALE3,
+  LOGG3, CURY3 e LPSB3 — que são empresas. Só a lista de fundos do Fundamentus
+  diz o que é FII.
 - A triagem enriquece os 45 primeiros colocados com nome, classe e setor; o resto da
   lista aparece só com os indicadores, porque cada nome exige uma requisição ao
   Fundamentus.

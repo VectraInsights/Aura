@@ -140,13 +140,14 @@ class DetalheEmpresa:
 
     @property
     def eh_fii(self) -> bool:
-        """FIIs listados pelo Fundamentus aparecem com o tipo 'ON NM'.
+        """Kept for compatibility; FII detection lives in analise.py.
 
-        Verificado contra unidades conhecidas (ALLD3, RIAA3, LOGG3, LPSB3, CURY3
-        -> ON NM) versus ações e unidades societárias (POMO3 -> ON, POMO4 -> PN N2,
-        CMIN3 -> ON N2, VULC3 -> ON).
+        NOTE: the "Tipo" field is the SHARE CLASS (ON, PN, ON N2, ON NM, DR3…),
+        not a FII marker. "ON NM" appears on ordinary companies such as
+        VALE3, LOGG3, CURY3 and LPSB3. A FII is identified by its ticker
+        being in the Fundamentus FII list.
         """
-        return "NM" in (self.tipo_papel or "").upper()
+        return False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -352,6 +353,70 @@ class FundamentusClient:
             df = df[df["cotacao"].notna() & (df["cotacao"] > 0)].copy()
 
         return df.reset_index(drop=True)
+
+    # ---------------------------------------------------------------- fiis
+    def mercado_fiis(self) -> pd.DataFrame:
+        """Tabela dos FIIs da B3 (383 fundos), com os campos do modelo comum.
+
+        O Fundamentus mantém os fundos em tabela separada, com métricas próprias
+        (FFO yield, vacância, cap rate). Aqui convertemos para o mesmo formato
+        da triagem de ações, deixando em branco o que não faz sentido para fundo.
+        """
+        if self.usar_cache:
+            guardado = self.cache.get("fundamentus", f"{VERSAO_CACHE}:mercado_fiis")
+            if guardado is not None:
+                return pd.DataFrame(guardado)
+
+        html = self._post(f"{BASE}/fii_resultado.php", {"negociada": "ON"})
+        soup = BeautifulSoup(html, "lxml")
+        linhas: list[list[str]] = []
+        for tabela in soup.find_all("table"):
+            trs = tabela.find_all("tr")
+            if not trs:
+                continue
+            cabecalho = [limpar_label(c.get_text(" ", strip=True)) for c in trs[0].find_all(["td", "th"])]
+            if "Papel" not in cabecalho:
+                continue
+            for tr in trs[1:]:
+                celulas = [limpar_label(c.get_text(" ", strip=True)) for c in tr.find_all(["td", "th"])]
+                if celulas:
+                    linhas.append(celulas)
+            break
+
+        if not linhas:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(linhas, columns=cabecalho)
+        mapa = {
+            "Papel": "ticker",
+            "Cotação": "cotacao",
+            "Dividend Yield": "divyield",
+            "P/VP": "pvp",
+            "FFO Yield": "ffo_yield",
+            "Valor de Mercado": "valor_mercado",
+            "Liquidez": "liquidez_diaria",
+            "Segmento": "segmento",
+            "Vacância Média": "vacancia",
+            "Cap Rate": "cap_rate",
+        }
+        df = df.rename(columns=mapa)
+        df = df.loc[:, ~df.columns.duplicated()]
+
+        for coluna in df.columns:
+            if coluna in ("ticker", "segmento"):
+                continue
+            df[coluna] = df[coluna].map(parse_br)
+
+        if "ticker" in df.columns:
+            df["ticker"] = df["ticker"].str.strip().str.upper()
+            df["tipo"] = "FII"
+        if "cotacao" in df.columns:
+            df = df[df["cotacao"].notna() & (df["cotacao"] > 0)].copy()
+
+        df = df.reset_index(drop=True)
+        if self.usar_cache and not df.empty:
+            self.cache.set("fundamentus", f"{VERSAO_CACHE}:mercado_fiis", df.to_dict(orient="records"))
+        return df
 
     # ---------------------------------------------------------------- detalhes
     def lista_fiis(self) -> set[str]:

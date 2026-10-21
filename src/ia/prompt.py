@@ -11,6 +11,7 @@ from typing import Any
 
 from ..util import formatar_num, formatar_pct, formatar_num  # noqa: F401  (formatar_num reexportado)
 from ..util import parse_br
+from ..perfil import resumo_para_ia
 
 INSTRUCAO_SISTEMA = """\
 Você é um analista sênior de ações listadas na B3, especializado em leitura de
@@ -104,6 +105,20 @@ PERFIS_ANALISE: dict[str, dict[str, str]] = {
 }
 
 
+def instrucao_sistema_para(perfil_investidor: dict[str, Any] | None = None) -> str:
+    """Instrução de sistema acrescida dos ajustes do perfil do investidor."""
+    from ..perfil import instrucoes_estilo
+
+    estilo = instrucoes_estilo(perfil_investidor)
+    if not estilo:
+        return INSTRUCAO_SISTEMA
+    return (
+        INSTRUCAO_SISTEMA
+        + "\n\nAJUSTES PARA O PERFIL DESTE INVESTIDOR (obedecer):\n"
+        + estilo
+    )
+
+
 def _linha(rotulo: str, valor: Any, formatter=None) -> str:
     if valor is None:
         return f"- {rotulo}: n/d"
@@ -137,6 +152,7 @@ def construir_prompt(
     subsetor: str | None = None,
     nro_acoes: float | None = None,
     valor_firma: float | None = None,
+    perfil_investidor: dict[str, Any] | None = None,
 ) -> str:
     """Monta o prompt com todos os números disponíveis da empresa."""
     perfil = perfil if perfil in PERFIS_ANALISE else "qualidade"
@@ -291,6 +307,18 @@ def construir_prompt(
             + "\n".join(f"- {c}" for c in criterios_tela)
             + "\n"
         )
+
+    # ---------------------------------------------------------- investidor
+    if perfil_investidor:
+        resumo = resumo_para_ia(perfil_investidor)
+        if resumo:
+            partes.append(
+                "\n## Quem é o investidor (contexto do usuário)\n"
+                "Use este contexto para calibrar o parecer — o que ele sabe, o que "
+                "ele busca e o que ele aceita.\n"
+                + resumo
+                + "\n"
+            )
 
     # ---------------------------------------------------------- pedido
     partes.append(

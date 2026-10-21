@@ -62,6 +62,24 @@ class Config:
         )
     )
 
+    # ------------------------------------------------------------------ login
+    #: Senha de acesso. Vazio = aplicação aberta (sem login).
+    app_password: str = field(default_factory=lambda: os.getenv("APP_PASSWORD", "").strip())
+    #: Chave de assinatura do cookie de sessão.
+    session_secret: str = field(default_factory=lambda: os.getenv("SESSION_SECRET", "").strip())
+    #: Cookie de sessão só por HTTPS (sempre ativo na Vercel).
+    cookie_https_only: bool = field(
+        default_factory=lambda: bool(os.getenv("VERCEL"))
+        or os.getenv("COOKIE_HTTPS_ONLY", "").strip().lower() in ("1", "true", "sim")
+    )
+    #: Validade da sessão, em segundos (padrão: 7 dias).
+    session_max_age: int = field(default_factory=lambda: _int_env("SESSION_MAX_AGE", 7 * 24 * 3600))
+
+    @property
+    def login_ativo(self) -> bool:
+        """Há senha configurada? Se não, a aplicação fica aberta."""
+        return bool(self.app_password)
+
     @property
     def tem_chave_ia(self) -> bool:
         return bool(self.gemini_api_key)

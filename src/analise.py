@@ -15,7 +15,7 @@ import pandas as pd
 
 from .dados import Cache, FundamentusClient, YahooClient
 from .ia import ClienteGemini, ErroIA, construir_prompt, schema_relatorio
-from .ia.prompt import INSTRUCAO_SISTEMA
+from .ia.prompt import instrucao_sistema_para
 from .screen import PERFIS_TELA, graham_number, montar_ranking, obter_perfil, resumo_colunas
 
 log = logging.getLogger(__name__)
@@ -102,6 +102,17 @@ class Analista:
         # Uma única requisição traz a B3 inteira; o filtro roda localmente em pandas
         # (escala exata, sem rate limit do Fundamentus).
         df = self.fundamentus.mercado_completo()
+        df["tipo"] = "Ação"
+
+        # Os FIIs vivem em outra tabela do Fundamentus, com métricas próprias.
+        if incluir_fiis:
+            try:
+                fiis = self.fundamentus.mercado_fiis()
+                if not fiis.empty:
+                    df = pd.concat([df, fiis], ignore_index=True)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Não foi possível obter a tabela de FIIs: %s", exc)
+
         ranking = montar_ranking(df, perfil)
 
         if enriquecer:
@@ -159,11 +170,16 @@ class Analista:
                 return ticker, {
                     "nome": detalhe.empresa,
                     "tipo_papel": detalhe.tipo_papel,
-                    "eh_fii": detalhe.eh_fii,
+                    "eh_fii": ticker in fiis,
                     "setor": detalhe.setor,
                 }
             except Exception:  # noqa: BLE001
                 return ticker, {}
+
+        try:
+            fiis = self.fundamentus.lista_fiis()
+        except Exception:  # noqa: BLE001
+            fiis = set()
 
         dados: dict[str, dict[str, Any]] = {}
         with ThreadPoolExecutor(max_workers=6) as pool:
@@ -204,23 +220,14 @@ class Analista:
             log.warning("Fundamentus sem dados para %s: %s", ticker, exc)
             ctx.notas.append(f"Fundamentus não retornou dados para {ticker}.")
 
-        # FII? Três fontes, porque nenhuma é completa:
-        #   - o Fundamentus marca unidades de FII como "ON NM" (sinal confiável);
-        #   - a lista do Fundamentus cobre os 383 FIIs de código terminado em 11;
-        #   - o yfinance classifica FIIs como setor "Real Estate".
+        # FII? Só a lista de fundos do Fundamentus é confiável.
+        # O campo "Tipo" é a CLASSE da ação (ON, PN, ON NM…) — "ON NM" aparece em
+        # VALE3, LOGG3, CURY3 e LPSB3, que são empresas, não fundos.
+        # E o setor "Real Estate" do yfinance também falha: classifica construtoras
+        # (Cury, Log) como se fossem fundos.
         ctx.tipo = "Ação"
-        nome_upper = (ctx.nome or "").upper()
-        if "FII" in nome_upper or "FUNDO DE INVESTIMENTO" in nome_upper:
-            ctx.tipo = "FII"
-        if ctx.tipo_papel and "NM" in ctx.tipo_papel.upper():
-            ctx.tipo = "FII"
         try:
             if ticker in self.fundamentus.lista_fiis():
-                ctx.tipo = "FII"
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            if (self.yahoo.perfil(ticker).get("setor") or "") == "Real Estate":
                 ctx.tipo = "FII"
         except Exception:  # noqa: BLE001
             pass
@@ -280,6 +287,7 @@ class Analista:
         ticker: str,
         perfil_ia: str = "qualidade",
         criterios_tela: list[str] | None = None,
+        perfil_investidor: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Gera o parecer técnico da IA para uma empresa."""
         ctx = self.contexto(ticker, criterios_tela=criterios_tela)
@@ -308,11 +316,12 @@ class Analista:
             criterios_tela=ctx.criterios_tela,
             nro_acoes=ctx.nro_acoes,
             valor_firma=ctx.valor_firma,
+            perfil_investidor=perfil_investidor,
         )
 
         resultado = self.cliente_ia.gerar(
             prompt=prompt,
-            instrucao_sistema=INSTRUCAO_SISTEMA,
+            instrucao_sistema=instrucao_sistema_para(perfil_investidor),
             schema=schema_relatorio(),
         )
         return {

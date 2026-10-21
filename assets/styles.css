@@ -371,6 +371,93 @@ tbody tr.sel { background: rgba(34, 211, 238, 0.07); }
   gap: 14px;
 }
 
+/* ---------------------------------------------------------------- login / onboarding */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(6, 8, 18, 0.9);
+  backdrop-filter: blur(8px);
+  overflow-y: auto;
+}
+
+.panel {
+  width: min(420px, 100%);
+  background: linear-gradient(180deg, var(--card), var(--bg-2));
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 30px 28px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.panel.wide { width: min(720px, 100%); text-align: left; }
+
+.brand-mark.big { font-size: 40px; margin-bottom: 6px; }
+.panel h2 { font-size: 21px; margin-bottom: 6px; }
+.hint.center { text-align: center; }
+
+.panel form { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
+.panel input[type="password"],
+.panel input[type="text"],
+.panel input[type="number"] {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 9px;
+  padding: 11px 13px;
+  outline: none;
+  font-size: 14px;
+}
+.panel input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+.erro-login {
+  margin-top: 14px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  color: #fecaca;
+  font-size: 13px;
+  text-align: left;
+}
+
+.onboarding-pergunta { margin-bottom: 20px; }
+.onboarding-pergunta h3 { font-size: 14px; font-weight: 600; margin-bottom: 3px; }
+.onboarding-pergunta .ajuda { font-size: 12px; color: var(--text-faint); margin-bottom: 9px; }
+
+.opcoes { display: flex; flex-direction: column; gap: 6px; }
+.opcao {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  cursor: pointer;
+  font-size: 13.5px;
+  transition: border-color .12s, background .12s;
+}
+.opcao:hover { border-color: var(--accent); }
+.opcao:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.opcao input { accent-color: var(--accent); width: 15px; height: 15px; flex: none; }
+.opcao .suffix { color: var(--text-faint); font-size: 12.5px; }
+
+.onboarding-navegacao {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.onboarding-navegacao .btn { width: auto; padding: 10px 18px; }
+
 @media (max-width: 940px) {
   .layout { grid-template-columns: 1fr; padding: 16px; }
   .sidebar { position: static; }

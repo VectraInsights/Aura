@@ -9,7 +9,9 @@ e também na raiz, para funcionar atrás de proxies que removem o prefixo.
 from __future__ import annotations
 
 import os
+import secrets
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -23,14 +25,17 @@ if str(RAIZ) not in sys.path:
 if os.getenv("VERCEL") or not os.access(RAIZ, os.W_OK):
     os.environ.setdefault("CACHE_DIR", "/tmp/aura-cache")
 
-from fastapi import APIRouter, FastAPI, HTTPException, Query, Request  # noqa: E402
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
+from starlette.middleware.sessions import SessionMiddleware  # noqa: E402
 
 from src.analise import Analista  # noqa: E402
 from src.config import CONFIG, VERSAO_APP  # noqa: E402
 from src.ia import PERFIS_ANALISE  # noqa: E402
 from src.ia.gemini import ErroIA  # noqa: E402
+from src.perfil import QUESTOES, perfil_completo, resumo_para_ia  # noqa: E402
 from src.screen import PERFIS_TELA  # noqa: E402
 
 app = FastAPI(
@@ -44,6 +49,30 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+#: Rotas liberadas mesmo sem sessão iniciada.
+ROTAS_PUBLICAS = {"/health", "/sessao", "/login", "/logout", "/diagnostico"}
+
+
+def _segredo_sessao() -> str:
+    """Chave de assinatura do cookie. Gerada na hora se não vier do ambiente."""
+    if CONFIG.session_secret:
+        return CONFIG.session_secret
+    if CONFIG.login_ativo:
+        print(
+            "[aviso] SESSION_SECRET nao configurada: as sessoes serao invalidadas "
+            "a cada reinicio da aplicacao. Defina SESSION_SECRET no ambiente."
+        )
+    return secrets.token_urlsafe(48)
+
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=_segredo_sessao(),
+    max_age=CONFIG.session_max_age,
+    same_site="lax",
+    https_only=CONFIG.cookie_https_only,
 )
 
 
@@ -93,7 +122,20 @@ async def normaliza_caminho(request: Request, call_next):
         request.scope["raw_path"] = caminho.encode()
     return await call_next(request)
 
+
+def exigir_sessao(request: Request) -> None:
+    """Dependência que bloqueia as rotas de dados sem sessão iniciada."""
+    if not CONFIG.login_ativo:
+        return
+    if not request.session.get("autenticado"):
+        raise HTTPException(
+            status_code=401,
+            detail="Não autenticado. Informe a senha para continuar.",
+        )
+
 router = APIRouter()
+#: Rotas que exigem sessão (quando há APP_PASSWORD configurada).
+router_protegido = APIRouter(dependencies=[Depends(exigir_sessao)])
 
 #: Instância compartilhada: o cache em disco evita re-scraping entre requisições.
 _analista: Analista | None = None
@@ -127,6 +169,107 @@ def _exiguir_ia() -> None:
             status_code=503,
             detail="GEMINI_API_KEY não configurada no ambiente da aplicação.",
         )
+
+
+@router.get("/sessao")
+def sessao(request: Request) -> dict:
+    """Estado da sessão — o frontend usa isto para decidir se mostra o login."""
+    autenticado = bool(request.session.get("autenticado")) or not CONFIG.login_ativo
+    return {
+        "autenticado": autenticado,
+        "login_ativo": CONFIG.login_ativo,
+        "perfil_preenchido": perfil_completo(request.session.get("perfil")),
+        "usuario": request.session.get("usuario"),
+    }
+
+
+@router.post("/login")
+async def login(request: Request) -> dict:
+    """Autentica com a senha de acesso (APP_PASSWORD).
+
+    Aceita JSON {"senha": "..."} ou formulário. A comparação é em tempo
+    constante, para não vazar informação pelo tempo de resposta.
+    """
+    if not CONFIG.login_ativo:
+        return {"autenticado": True, "mensagem": "Login desativado."}
+
+    senha = ""
+    tipo = request.headers.get("content-type", "")
+    if "application/json" in tipo:
+        try:
+            corpo = await request.json()
+            senha = str(corpo.get("senha", ""))
+        except Exception:  # noqa: BLE001
+            senha = ""
+    else:
+        from urllib.parse import parse_qs
+
+        try:
+            bruto = (await request.body()).decode("utf-8", errors="replace")
+            senha = parse_qs(bruto).get("senha", [""])[0]
+        except Exception:  # noqa: BLE001
+            senha = ""
+
+    if not secrets.compare_digest(senha.encode("utf-8"), CONFIG.app_password.encode("utf-8")):
+        time.sleep(0.4)  # desacelera tentativas em massa
+        raise HTTPException(status_code=401, detail="Senha incorreta.")
+
+    request.session.clear()
+    request.session["autenticado"] = True
+    request.session["usuario"] = "voce"
+    return {"autenticado": True, "mensagem": "Acesso liberado."}
+
+
+@router.post("/logout")
+def logout(request: Request) -> dict:
+    """Encerra a sessão."""
+    request.session.clear()
+    return {"autenticado": False}
+
+
+@router_protegido.get("/perfil")
+def perfil_atual(request: Request) -> dict:
+    """Questionário do onboarding + as respostas já dadas."""
+    return {
+        "questoes": QUESTOES,
+        "respostas": request.session.get("perfil") or {},
+        "preenchido": perfil_completo(request.session.get("perfil")),
+    }
+
+
+@router_protegido.post("/perfil")
+async def salvar_perfil(request: Request) -> dict:
+    """Guarda as respostas do onboarding na sessão."""
+    try:
+        corpo = await request.json()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail="Corpo inválido.") from exc
+
+    respostas: dict[str, Any] = {}
+    for pergunta in QUESTOES:
+        campo = pergunta["campo"]
+        if campo not in (corpo or {}):
+            continue
+        valor = corpo[campo]
+        if pergunta.get("tipo") == "numero":
+            try:
+                valor = float(valor)
+            except (TypeError, ValueError):
+                continue
+        elif pergunta.get("tipo") == "texto":
+            valor = str(valor or "").strip()[:600]
+        else:
+            permitidos = {o["valor"] for o in pergunta.get("opcoes", [])}
+            if valor not in permitidos:
+                continue
+        respostas[campo] = valor
+
+    request.session["perfil"] = respostas
+    return {
+        "perfil_preenchido": perfil_completo(respostas),
+        "respostas": respostas,
+        "resumo": resumo_para_ia(respostas),
+    }
 
 
 @router.get("/diagnostico")
@@ -172,7 +315,7 @@ def health() -> dict:
     }
 
 
-@router.get("/perfis")
+@router_protegido.get("/perfis")
 def perfis() -> dict:
     """Perfis de triagem e perfis de foco da IA disponíveis."""
     tela = [
@@ -192,7 +335,7 @@ def perfis() -> dict:
     return {"triagem": tela, "analise": ia}
 
 
-@router.get("/triagem")
+@router_protegido.get("/triagem")
 def triagem(
     perfil: str = Query("qualidade", description="Perfil de triagem"),
     limite: int = Query(50, ge=1, le=100),
@@ -210,9 +353,10 @@ def triagem(
         raise HTTPException(status_code=502, detail=f"Falha na coleta de dados: {exc}") from exc
 
 
-@router.get("/analise/{ticker}")
+@router_protegido.get("/analise/{ticker}")
 def analise(
     ticker: str,
+    request: Request,
     perfil: str = Query("qualidade", description="Foco da análise"),
 ) -> dict:
     """Gera o parecer técnico da IA sobre uma empresa."""
@@ -220,15 +364,21 @@ def analise(
         raise HTTPException(status_code=400, detail=f"Perfil de análise desconhecido: {perfil}")
     _exiguir_ia()
     try:
-        return json_seguro(get_analista().parecer(ticker, perfil_ia=perfil))
+        return json_seguro(
+            get_analista().parecer(
+                ticker,
+                perfil_ia=perfil,
+                perfil_investidor=request.session.get("perfil") or None,
+            )
+        )
     except ErroIA as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Falha na análise: {exc}") from exc
 
 
-@router.post("/analise-lote")
-def analise_lote(payload: dict) -> dict:
+@router_protegido.post("/analise-lote")
+def analise_lote(payload: dict, request: Request) -> dict:
     """Analisa várias empresas em paralelo. Body: {"tickers": [...], "perfil": "..."}.
 
     O paralelismo existe para caber no limite de 60s da função serverless da Vercel.
@@ -246,7 +396,11 @@ def analise_lote(payload: dict) -> dict:
 
     def _um(ticker: str) -> dict:
         try:
-            parecer = get_analista().parecer(ticker, perfil_ia=perfil)
+            parecer = get_analista().parecer(
+                ticker,
+                perfil_ia=perfil,
+                perfil_investidor=request.session.get("perfil") or None,
+            )
             parecer["meta"]["perfil"] = perfil
             return {"ticker": ticker, "ok": True, **parecer}
         except Exception as exc:  # noqa: BLE001
@@ -261,6 +415,8 @@ def analise_lote(payload: dict) -> dict:
 # Monta as rotas em /api/... e também na raiz (proxy sem prefixo).
 app.include_router(router, prefix="/api")
 app.include_router(router)
+app.include_router(router_protegido, prefix="/api")
+app.include_router(router_protegido)
 
 
 class _EstaticosSeguros(StaticFiles):

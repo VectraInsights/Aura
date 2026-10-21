@@ -177,24 +177,44 @@ def graham_number(lpa: float | None, vpa: float | None) -> float | None:
     return (22.5 * lpa * vpa) ** 0.5
 
 
+#: Filtros que não se aplicam a FIIs (métricas de companhia aberta).
+FILTROS_SO_ACOES = {
+    "pl", "pvp", "psr", "pativos", "pcapgiro", "pebit", "p_circ_liq",
+    "ev_ebit", "ev_ebitda", "margem_ebit", "margem_liquida", "roic", "roe",
+    "liquidez_corrente", "div_liq_patrimonio", "crescimento_receita_5a",
+    "patrimonio_liquido",
+}
+
+
 def aplicar_perfil(df: pd.DataFrame, perfil: Perfil) -> pd.DataFrame:
     """Aplica os filtros do perfil localmente (redundância com o Fundamentus).
 
     Serve para: (a) garantir o filtro mesmo se o Fundamentus mudar o formulário,
     (b) permitir ordenar/rankear os resultados.
+
+    Linhas de FII passam só pelos filtros que fazem sentido para fundo
+    (dividend yield, P/VP e liquidez): P/L, ROE e EV/EBITDA de um fundo
+    não são comparáveis aos de uma companhia aberta.
     """
     if df.empty:
         return df
 
     mask = pd.Series(True, index=df.index)
+    eh_fii = df["tipo"].astype(str).str.upper() == "FII" if "tipo" in df.columns else None
+
     for coluna, (minimo, maximo) in perfil.filtros.items():
         if coluna not in df.columns:
             continue
         serie = pd.to_numeric(df[coluna], errors="coerce")
+        # FII não é avaliado por métricas de companhia aberta: onde o filtro
+        # não se aplica, a linha passa livre.
+        aplicavel = pd.Series(True, index=df.index)
+        if eh_fii is not None and coluna in FILTROS_SO_ACOES:
+            aplicavel = ~eh_fii
         if minimo is not None:
-            mask &= serie >= minimo
+            mask &= (~aplicavel) | (serie >= minimo).fillna(False)
         if maximo is not None:
-            mask &= serie <= maximo
+            mask &= (~aplicavel) | (serie <= maximo).fillna(False)
 
     return df[mask].copy()
 

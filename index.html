@@ -20,6 +20,8 @@
   </div>
   <div class="topbar-right">
     <span class="status" id="status" title="Status da API">conectando…</span>
+    <button class="btn ghost" id="btn-perfil" type="button" hidden>Meu perfil</button>
+    <button class="btn ghost" id="btn-logout" type="button" hidden>Sair</button>
     <button class="btn ghost" id="btn-docs" type="button">API</button>
   </div>
 </header>
@@ -128,6 +130,40 @@
   </header>
   <div class="drawer-body" id="drawer-body"></div>
 </aside>
+
+<!-- ===================== login ===================== -->
+<div class="overlay" id="login-overlay" hidden>
+  <div class="panel">
+    <div class="brand-mark big">◈</div>
+    <h2>Aura</h2>
+    <p class="hint center">Informe a senha para acessar a ferramenta.</p>
+    <form id="login-form" autocomplete="off">
+      <input type="password" id="login-senha" placeholder="senha de acesso" required>
+      <button class="btn primary" type="submit">Entrar</button>
+    </form>
+    <p class="erro-login" id="login-erro" hidden></p>
+  </div>
+</div>
+
+<!-- ===================== onboarding ===================== -->
+<div class="overlay" id="onboarding-overlay" hidden>
+  <div class="panel wide">
+    <div class="brand-mark big">◈</div>
+    <h2>Vamos calibrar a Aura para você</h2>
+    <p class="hint center">
+      Estas respostas entram em cada parecer: o nível de detalhe, o que a IA prioriza
+      e o tom seguem o seu perfil de investidor. Dá para mudar quando quiser.
+    </p>
+    <form id="onboarding-form">
+      <div id="onboarding-perguntas"></div>
+      <div class="onboarding-navegacao">
+        <button class="btn ghost" id="ob-pular" type="button">Pular por agora</button>
+        <button class="btn primary" type="submit">Salvar e continuar</button>
+      </div>
+    </form>
+    <p class="erro-login" id="onboarding-erro" hidden></p>
+  </div>
+</div>
 
 <script src="/assets/app.js"></script>
 </body>

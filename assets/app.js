@@ -44,12 +44,13 @@ async function descobrirBase() {
   const candidatos = ["/api", "", "/api/index.py"];
   for (const base of candidatos) {
     try {
-      const resposta = await fetch(base + "/perfis", { headers: { Accept: "application/json" } });
-      if (!resposta.ok) continue;
+      const resposta = await fetch(base + "/health", { headers: { Accept: "application/json" } });
       const texto = await resposta.text();
-      // Confirma que e mesmo a API: a protecao da Vercel devolve HTML de login.
-      const corpo = JSON.parse(texto);
-      if (corpo && Array.isArray(corpo.triagem)) {
+      let corpo = null;
+      try { corpo = JSON.parse(texto); } catch (_) { corpo = null; }
+      // A API responde JSON. A protecao da Vercel devolveria HTML de login,
+      // que nao parseia — assim o prefixo errado nunca e aceito.
+      if (corpo && (corpo.status || corpo.versao || corpo.detail)) {
         BASE_API = base;
         return base;
       }
@@ -111,6 +112,139 @@ function setStatus(texto, classe) {
   s.className = `status ${classe || ""}`;
 }
 
+// ------------------------------------------------------------------ login / onboarding
+async function verificarSessao() {
+  let dados;
+  try {
+    dados = await api("/sessao");
+  } catch (e) {
+    return null;
+  }
+  if (!dados.autenticado) {
+    $("login-overlay").hidden = false;
+    $("btn-logout").hidden = true;
+    $("btn-perfil").hidden = true;
+    return dados;
+  }
+  $("login-overlay").hidden = true;
+  $("btn-logout").hidden = !dados.login_ativo;
+  $("btn-perfil").hidden = false;
+  if (!dados.perfil_preenchido) {
+    await abrirOnboarding();
+  }
+  return dados;
+}
+
+async function fazerLogin(evento) {
+  evento.preventDefault();
+  const erro = $("login-erro");
+  erro.hidden = true;
+  const senha = $("login-senha").value;
+  try {
+    await api("/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ senha }),
+      timeoutMs: 15000,
+    });
+    $("login-senha").value = "";
+    await verificarSessao();
+    await init();
+  } catch (e) {
+    erro.textContent = e.message;
+    erro.hidden = false;
+  }
+}
+
+async function sair() {
+  try {
+    await api("/logout", { method: "POST", timeoutMs: 10000 });
+  } catch (_) { /* segue o logout local */ }
+  location.reload();
+}
+
+async function abrirOnboarding() {
+  let dados;
+  try {
+    dados = await api("/perfil");
+  } catch (e) {
+    return;
+  }
+  const container = $("onboarding-perguntas");
+  container.innerHTML = "";
+  const respostas = dados.respostas || {};
+
+  (dados.questoes || []).forEach((pergunta) => {
+    const bloco = el("div", "onboarding-pergunta");
+    bloco.appendChild(el("h3", null, pergunta.titulo));
+    if (pergunta.ajuda) bloco.appendChild(el("div", "ajuda", pergunta.ajuda));
+
+    if (pergunta.tipo === "numero" || pergunta.tipo === "texto") {
+      const input = document.createElement("input");
+      input.type = pergunta.tipo === "numero" ? "number" : "text";
+      input.dataset.campo = pergunta.campo;
+      input.placeholder = pergunta.placeholder || "";
+      if (pergunta.tipo === "numero") {
+        input.step = "0.1";
+        input.min = "0";
+        input.value = respostas[pergunta.campo] ?? pergunta.padrao ?? "";
+      } else {
+        input.value = respostas[pergunta.campo] ?? "";
+      }
+      bloco.appendChild(input);
+      if (pergunta.sufixo) {
+        const s = el("div", "ajuda", pergunta.sufixo);
+        s.style.marginTop = "5px";
+        bloco.appendChild(s);
+      }
+    } else {
+      const grupo = el("div", "opcoes");
+      (pergunta.opcoes || []).forEach((opcao) => {
+        const label = el("label", "opcao");
+        const radio = document.createElement("input");
+        radio.type = "radio";
+        radio.name = pergunta.campo;
+        radio.value = opcao.valor;
+        if (respostas[pergunta.campo] === opcao.valor) radio.checked = true;
+        label.appendChild(radio);
+        label.appendChild(el("span", null, opcao.rotulo));
+        grupo.appendChild(label);
+      });
+      bloco.appendChild(grupo);
+    }
+    container.appendChild(bloco);
+  });
+
+  $("onboarding-overlay").hidden = false;
+}
+
+async function salvarOnboarding(evento) {
+  evento.preventDefault();
+  const erro = $("onboarding-erro");
+  erro.hidden = true;
+  const payload = {};
+
+  document.querySelectorAll("#onboarding-perguntas [data-campo]").forEach((input) => {
+    payload[input.dataset.campo] = input.type === "number" ? Number(input.value) : input.value;
+  });
+  document.querySelectorAll('#onboarding-perguntas input[type="radio"]:checked').forEach((radio) => {
+    payload[radio.name] = radio.value;
+  });
+
+  try {
+    await api("/perfil", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      timeoutMs: 15000,
+    });
+    $("onboarding-overlay").hidden = true;
+  } catch (e) {
+    erro.textContent = e.message;
+    erro.hidden = false;
+  }
+}
+
 // ------------------------------------------------------------------ init
 async function init() {
   // Descobre o prefixo da API antes de qualquer chamada.
@@ -125,10 +259,13 @@ async function init() {
   }
 
   try {
-    const perfis = await api("/perfis");
-    state.perfisTriagem = perfis.triagem;
-    state.perfisAnalise = perfis.analise;
-    montarSelects();
+    const sessao = await verificarSessao();
+    if (sessao && sessao.autenticado) {
+      const perfis = await api("/perfis");
+      state.perfisTriagem = perfis.triagem;
+      state.perfisAnalise = perfis.analise;
+      montarSelects();
+    }
   } catch (e) {
     mostrarErro(`Não foi possível carregar os perfis: ${e.message}`);
   }
@@ -535,6 +672,11 @@ document.addEventListener("DOMContentLoaded", () => {
   $("drawer-close").addEventListener("click", fecharDrawer);
   $("drawer-backdrop").addEventListener("click", fecharDrawer);
   $("btn-docs").addEventListener("click", () => window.open("/docs", "_blank"));
+  $("login-form").addEventListener("submit", fazerLogin);
+  $("onboarding-form").addEventListener("submit", salvarOnboarding);
+  $("btn-logout").addEventListener("click", sair);
+  $("btn-perfil").addEventListener("click", abrirOnboarding);
+  $("ob-pular").addEventListener("click", () => { $("onboarding-overlay").hidden = true; });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") fecharDrawer(); });
   init();
 });
