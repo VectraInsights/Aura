@@ -23,7 +23,7 @@ if str(RAIZ) not in sys.path:
 if os.getenv("VERCEL") or not os.access(RAIZ, os.W_OK):
     os.environ.setdefault("CACHE_DIR", "/tmp/aura-cache")
 
-from fastapi import APIRouter, FastAPI, HTTPException, Query  # noqa: E402
+from fastapi import APIRouter, FastAPI, HTTPException, Query, Request  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
@@ -45,6 +45,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def normaliza_caminho(request: Request, call_next):
+    """Normaliza o caminho quando o roteador reescreve a URL.
+
+    O Vercel pode entregar à função o caminho já reescrito
+    (/api/index.py/perfis) em vez do original (/api/perfis). Sem esta
+    correção, toda chamada da interface responde 404.
+    """
+    caminho = request.scope.get("path", "")
+    for prefixo in ("/api/index.py", "/index.py"):
+        if caminho == prefixo:
+            request.scope["path"] = "/api/health"
+            break
+        if caminho.startswith(prefixo + "/"):
+            request.scope["path"] = "/api" + caminho[len(prefixo):]
+            break
+    return await call_next(request)
 
 router = APIRouter()
 

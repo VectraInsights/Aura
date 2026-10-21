@@ -102,12 +102,43 @@ python run.py saude                                   # testa chave e modelo
 
 ## Deploy na Vercel
 
+### Onde a chave do Gemini vai
+
+**Em Environment Variables do projeto Vercel. Nunca no código, nunca no repositório.**
+
+O arquivo `.env` serve só para rodar localmente — e ele está no `.gitignore`, então
+nunca vai para o GitHub. Na Vercel, o equivalente é o painel do projeto:
+
+```
+Vercel → seu projeto → Settings → Environment Variables → Add Variable
+```
+
+| Nome | Valor | Ambiente |
+|---|---|---|
+| `GEMINI_API_KEY` | sua chave do AI Studio | **Production, Preview e Development** |
+| `GEMINI_MODEL` | `gemini-3.6-flash` (opcional) | Production |
+| `GEMINI_MODELOS_FALLBACK` | `gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3-flash-preview` (opcional) | Production |
+
+> Marque os três ambientes. Se a variável existir só em "Development", a produção
+> responde `503 ia_configurada: false` — a interface sobe, mas nenhum parecer sai.
+
+Para gerar uma chave: <https://aistudio.google.com/apikey> (a cota gratuita é
+automática). Depois de mudar uma variável, é preciso **redeploy** — o botão
+*Redeploy* do deploy atual.
+
+Verifique o que a aplicação está enxergando:
+
+```bash
+curl https://seu-projeto.vercel.app/api/health
+# {"status":"ok","ia_configurada":true,"modelo_padrao":"gemini-3.6-flash",...}
+```
+
+`"ia_configurada": false` = a variável não chegou no ambiente certo.
+
 ### Caminho A — integração com o GitHub (recomendado)
 
 1. Crie o projeto em <https://vercel.com/new> e conecte o repositório `VectraInsights/Aura`.
-2. Em **Settings → Environment Variables**, cadastre:
-   - `GEMINI_API_KEY` = sua chave do AI Studio
-   - `GEMINI_MODEL` = `gemini-3.6-flash` (opcional)
+2. Cadastre as variáveis de ambiente acima (**Settings → Environment Variables**).
 3. Deploy. O `vercel.json` já mapeia `/api/*` para a função Python e o
    `requirements.txt` da raiz instala as dependências.
 
