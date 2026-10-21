@@ -33,6 +33,21 @@ class Cache:
             return None
         return payload.get("data")
 
+    def get_stale(self, namespace: str, chave: str) -> Any | None:
+        """Último valor conhecido, mesmo expirado.
+
+        Usado como rede de segurança: quando a fonte está lenta ou fora do ar,
+        a aplicação responde com o dado anterior em vez de travar.
+        """
+        caminho = self._caminho(namespace, chave)
+        if not caminho.exists():
+            return None
+        try:
+            payload = json.loads(caminho.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+        return payload.get("data")
+
     def set(self, namespace: str, chave: str, dados: Any) -> None:
         caminho = self._caminho(namespace, chave)
         try:

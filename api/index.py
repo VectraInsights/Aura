@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Any
 
 # Permite executar tanto pelo repo (uvicorn api.index:app) quanto pela raiz.
 RAIZ = Path(__file__).resolve().parent.parent
@@ -23,7 +25,7 @@ if os.getenv("VERCEL") or not os.access(RAIZ, os.W_OK):
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
-from fastapi.responses import JSONResponse  # noqa: E402
+from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 from src.analise import Analista  # noqa: E402
 from src.config import CONFIG  # noqa: E402
@@ -55,6 +57,21 @@ def get_analista() -> Analista:
     if _analista is None:
         _analista = Analista()
     return _analista
+
+
+def json_seguro(payload: Any) -> Any:
+    """Substitui NaN/Infinity por None.
+
+    Sem isso o FastAPI emite `NaN` no corpo, que não é JSON válido: o
+    response.json() do navegador quebra e a interface fica sem resposta.
+    """
+    if isinstance(payload, dict):
+        return {k: json_seguro(v) for k, v in payload.items()}
+    if isinstance(payload, (list, tuple)):
+        return [json_seguro(v) for v in payload]
+    if isinstance(payload, float):
+        return None if (payload != payload or payload in (float("inf"), float("-inf"))) else payload
+    return payload
 
 
 def _exiguir_ia() -> None:
@@ -109,9 +126,10 @@ def triagem(
     if perfil not in PERFIS_TELA:
         raise HTTPException(status_code=400, detail=f"Perfil desconhecido: {perfil}")
     try:
-        return get_analista().varredura(
+        dados = get_analista().varredura(
             perfil_chave=perfil, limite=limite, incluir_fiis=incluir_fiis
         )
+        return json_seguro(dados)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Falha na coleta de dados: {exc}") from exc
 
@@ -126,7 +144,7 @@ def analise(
         raise HTTPException(status_code=400, detail=f"Perfil de análise desconhecido: {perfil}")
     _exiguir_ia()
     try:
-        return get_analista().parecer(ticker, perfil_ia=perfil)
+        return json_seguro(get_analista().parecer(ticker, perfil_ia=perfil))
     except ErroIA as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
@@ -135,7 +153,10 @@ def analise(
 
 @router.post("/analise-lote")
 def analise_lote(payload: dict) -> dict:
-    """Analisa várias empresas em sequência. Body: {"tickers": [...], "perfil": "..."}."""
+    """Analisa várias empresas em paralelo. Body: {"tickers": [...], "perfil": "..."}.
+
+    O paralelismo existe para caber no limite de 60s da função serverless da Vercel.
+    """
     tickers = payload.get("tickers") or []
     perfil = payload.get("perfil", "qualidade")
     if not isinstance(tickers, list) or not tickers:
@@ -147,15 +168,18 @@ def analise_lote(payload: dict) -> dict:
         )
     _exigir_ia()
 
-    resultados = []
-    for ticker in tickers:
+    def _um(ticker: str) -> dict:
         try:
             parecer = get_analista().parecer(ticker, perfil_ia=perfil)
             parecer["meta"]["perfil"] = perfil
-            resultados.append({"ticker": ticker, "ok": True, **parecer})
+            return {"ticker": ticker, "ok": True, **parecer}
         except Exception as exc:  # noqa: BLE001
-            resultados.append({"ticker": ticker, "ok": False, "erro": str(exc)})
-    return {"perfil": perfil, "resultados": resultados}
+            return {"ticker": ticker, "ok": False, "erro": str(exc)}
+
+    with ThreadPoolExecutor(max_workers=min(4, len(tickers))) as pool:
+        resultados = list(pool.map(_um, tickers))
+
+    return json_seguro({"perfil": perfil, "resultados": resultados})
 
 
 # Monta as rotas em /api/... e também na raiz (proxy sem prefixo).
@@ -163,6 +187,14 @@ app.include_router(router, prefix="/api")
 app.include_router(router)
 
 
-@app.get("/")
-def raiz() -> JSONResponse:
-    return JSONResponse({"app": "Aura", "docs": "/docs", "saude": "/api/health"})
+class _EstaticosSeguros(StaticFiles):
+    """StaticFiles que não expõe arquivos de código ou ocultos (.env, .py)."""
+
+    def lookup_path(self, path: str):  # type: ignore[override]
+        if Path(path).name.startswith(".") or path.endswith(".py"):
+            raise HTTPException(status_code=404, detail="Not Found")
+        return super().lookup_path(path)
+
+
+# Por último: as rotas da API já foram registradas, então "/" cai no index.html.
+app.mount("/", _EstaticosSeguros(directory=str(RAIZ), html=True), name="estatico")

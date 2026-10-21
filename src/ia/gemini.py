@@ -19,12 +19,18 @@ from ..config import CONFIG
 
 log = logging.getLogger(__name__)
 
-# Erros que valem a pena repetir / trocar de modelo.
+# Erros que valem a pena repetir no MESMO modelo.
 _ERROS_RETENTAVEIS = {
-    "RESOURCE_EXHAUSTED",  # 429 - cota
-    "UNAVAILABLE",          # 503 - alta demanda
+    "RESOURCE_EXHAUSTED",  # 429 - cota, pode liberar em segundos
     "DEADLINE_EXCEEDED",
     "INTERNAL",
+}
+
+# Erros que indicam que este modelo não vai responder agora: vale pular direto
+# para o próximo da cadeia, em vez de gastar o tempo do usuário com retentativas.
+_ERROS_PULAR_MODELO = {
+    "UNAVAILABLE",  # 503 - alta demanda
+    "NOT_FOUND",    # 404 - modelo indisponível para esta conta
 }
 
 
@@ -73,8 +79,13 @@ class ClienteGemini:
     def cliente(self):
         if self._cliente is None:
             from google import genai
+            from google.genai import types
 
-            self._cliente = genai.Client(api_key=self.api_key)
+            self._cliente = genai.Client(
+                api_key=self.api_key,
+                # Sem teto de tempo, uma chamada travada segura a requisição inteira.
+                http_options=types.HttpOptions(timeout=60000),
+            )
         return self._cliente
 
     @staticmethod
@@ -97,7 +108,7 @@ class ClienteGemini:
         prompt: str,
         instrucao_sistema: str | None = None,
         schema: Any | None = None,
-        max_tentativas: int = 3,
+        max_tentativas: int = 2,
     ) -> ResultadoIA:
         """Envia o prompt ao Gemini e devolve a resposta estruturada.
 
@@ -147,16 +158,16 @@ class ClienteGemini:
                 except Exception as exc:  # noqa: BLE001 - a lib usa hierarquia própria
                     ultimo_erro = exc
                     codigo = self._codigo_erro(exc)
-                    retentavel = codigo in _ERROS_RETENTAVEIS
 
                     log.warning(
                         "Gemini falhou (modelo=%s tentativa=%d codigo=%s): %s",
-                        modelo, tentativa + 1, codigo, str(exc)[:200],
+                        modelo, tentativa + 1, codigo, str(exc)[:160],
                     )
 
-                    if codigo == "NOT_FOUND":
-                        break  # modelo indisponível para esta conta: próximo da lista
-                    if not retentavel:
+                    if codigo in _ERROS_PULAR_MODELO:
+                        # Congestionado ou inexistente: vai direto ao próximo modelo.
+                        break
+                    if codigo not in _ERROS_RETENTAVEIS:
                         break
                     if tentativa < max_tentativas - 1:
                         espera = 2 ** tentativa + 1

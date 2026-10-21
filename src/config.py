@@ -50,7 +50,7 @@ class Config:
     )
     cache_dir: Path = field(default_factory=lambda: RAIZ / os.getenv("CACHE_DIR", ".cache"))
     cache_ttl_horas: int = field(default_factory=lambda: _int_env("CACHE_TTL_HORAS", 12))
-    max_tickers_analise: int = field(default_factory=lambda: _int_env("MAX_TICKERS_ANALISE", 10))
+    max_tickers_analise: int = field(default_factory=lambda: _int_env("MAX_TICKERS_ANALISE", 8))
     user_agent: str = field(
         default_factory=lambda: os.getenv(
             "HTTP_USER_AGENT",

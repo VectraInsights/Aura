@@ -173,17 +173,28 @@ class DetalheEmpresa:
 
 
 class FundamentusClient:
+    #: Tempo máximo de espera por requisição. O Fundamentus costuma ficar lento
+    #: (ou limitar a taxa) em horários de pico; esperar mais só piora a fila.
+    TIMEOUT = 15
+    MAX_TENTATIVAS = 2
+    #: Conexões simultâneas: acima disso o site começa a devolver tabela vazia.
+    MAX_CONEXOES = 4
+
     def __init__(self, cache: Cache | None = None, usar_cache: bool = True):
         self.cache = cache or Cache()
         self.usar_cache = usar_cache
         self.sessao = requests.Session()
         self.sessao.headers.update(CONFIG.headers)
         retry = Retry(
-            total=3, backoff_factor=1.5,
+            total=1, backoff_factor=0.8,
             status_forcelist=(429, 500, 502, 503, 504),
             allowed_methods=frozenset({"GET", "POST"}),
         )
-        adapter = HTTPAdapter(max_retries=retry, pool_connections=8, pool_maxsize=8)
+        adapter = HTTPAdapter(
+            max_retries=retry,
+            pool_connections=self.MAX_CONEXOES,
+            pool_maxsize=self.MAX_CONEXOES,
+        )
         self.sessao.mount("https://", adapter)
         self.sessao.mount("http://", adapter)
 
@@ -197,20 +208,26 @@ class FundamentusClient:
         return resposta.content.decode("iso-8859-1", errors="replace")
 
     def _get(self, url: str, params: dict | None = None) -> str:
-        try:
-            resposta = self.sessao.get(url, params=params, timeout=30)
-            resposta.raise_for_status()
-        except requests.RequestException as exc:
-            raise ErroFundamentus(f"Falha ao acessar {url}: {exc}") from exc
-        return self._decodificar(resposta)
+        ultimo: Exception | None = None
+        for _ in range(self.MAX_TENTATIVAS):
+            try:
+                resposta = self.sessao.get(url, params=params, timeout=self.TIMEOUT)
+                resposta.raise_for_status()
+                return self._decodificar(resposta)
+            except requests.RequestException as exc:
+                ultimo = exc
+        raise ErroFundamentus(f"Falha ao acessar {url}: {ultimo}")
 
     def _post(self, url: str, data: dict) -> str:
-        try:
-            resposta = self.sessao.post(url, data=data, timeout=45)
-            resposta.raise_for_status()
-        except requests.RequestException as exc:
-            raise ErroFundamentus(f"Falha ao acessar {url}: {exc}") from exc
-        return self._decodificar(resposta)
+        ultimo: Exception | None = None
+        for _ in range(self.MAX_TENTATIVAS):
+            try:
+                resposta = self.sessao.post(url, data=data, timeout=self.TIMEOUT)
+                resposta.raise_for_status()
+                return self._decodificar(resposta)
+            except requests.RequestException as exc:
+                ultimo = exc
+        raise ErroFundamentus(f"Falha ao acessar {url}: {ultimo}")
 
     # --------------------------------------------------------------- varredura
     def mercado_completo(self) -> pd.DataFrame:
@@ -226,8 +243,17 @@ class FundamentusClient:
             if guardado is not None:
                 return pd.DataFrame(guardado)
 
-        html = self._post(f"{BASE}/resultado.php", {"negociada": "ON"})
-        df = self._parse_tabela_mercado(html)
+        try:
+            html = self._post(f"{BASE}/resultado.php", {"negociada": "ON"})
+            df = self._parse_tabela_mercado(html)
+        except ErroFundamentus:
+            # Fonte fora do ar: serve o último dado conhecido em vez de travar.
+            velho = self.cache.get_stale("fundamentus", f"{VERSAO_CACHE}:mercado_completo")
+            if velho:
+                log.warning("Fundamentus indisponível; usando cache antigo.")
+                return pd.DataFrame(velho)
+            raise
+
         if self.usar_cache and not df.empty:
             self.cache.set("fundamentus", f"{VERSAO_CACHE}:mercado_completo", df.to_dict(orient="records"))
         return df

@@ -7,7 +7,7 @@ consomem apenas estas funções.
 from __future__ import annotations
 
 import logging
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -106,14 +106,21 @@ class Analista:
 
         if enriquecer:
             # head() devolve uma cópia: enriquece a cópia e traz de volta por merge.
-            topo = ranking.head(min(limite, 40)).copy()
+            # Folga de 12 linhas cobre as cotas de FII removidas logo abaixo.
+            topo = ranking.head(min(limite + 12, 45)).copy()
             self._enriquecer(topo)
             extras = topo[["ticker", "nome", "tipo_papel", "eh_fii", "setor"]]
             ranking = ranking.merge(extras, on="ticker", how="left")
-            ranking["eh_fii"] = ranking["eh_fii"].fillna(False).astype(bool)
-            for coluna in ["nome", "tipo_papel", "setor"]:
-                if coluna in ranking.columns:
-                    ranking[coluna] = ranking[coluna].where(ranking[coluna].notna(), None)
+            # Reatribui a partir de listas Python: evita NaN do pandas (que não é
+            # JSON válido) e devolve None de verdade para o que não foi enriquecido.
+            mapa = dict(zip(topo["ticker"], topo.to_dict(orient="records")))
+            for coluna, padrao in [("nome", None), ("tipo_papel", None), ("setor", None)]:
+                ranking[coluna] = [
+                    _limpa(mapa.get(t, {}).get(coluna, padrao), padrao) for t in ranking["ticker"]
+                ]
+            ranking["eh_fii"] = [
+                bool(_limpa(mapa.get(t, {}).get("eh_fii", False), False)) for t in ranking["ticker"]
+            ]
 
         # Unidades de FII (tipo "ON NM") não são comparáveis a ações: ficam de fora.
         if "eh_fii" in ranking.columns and not incluir_fiis:
@@ -137,8 +144,12 @@ class Analista:
             "resultados": registros,
         }
 
-    def _enriquecer(self, df: pd.DataFrame) -> None:
-        """Preenche nome, tipo de papel e marca FII no DataFrame (in place)."""
+    def _enriquecer(self, df: pd.DataFrame, prazo_s: float = 12.0) -> None:
+        """Preenche nome, tipo de papel e marca FII no DataFrame (in place).
+
+        Respeita um prazo máximo: se o Fundamentus estiver lento, o que não vier
+        a tempo fica sem nome — a triagem é entregue na hora, sem travar a tela.
+        """
         if df.empty:
             return
 
@@ -155,9 +166,14 @@ class Analista:
                 return ticker, {}
 
         dados: dict[str, dict[str, Any]] = {}
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            for ticker, info in pool.map(_buscar, df["ticker"].tolist()):
-                dados[ticker] = info
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            futures = {pool.submit(_buscar, t): t for t in df["ticker"].tolist()}
+            try:
+                for fut in as_completed(futures, timeout=prazo_s):
+                    ticker, info = fut.result()
+                    dados[ticker] = info
+            except TimeoutError:
+                log.warning("Enriquecimento interrompido no prazo de %ss.", prazo_s)
 
         for coluna, padrao in [("nome", None), ("tipo_papel", None), ("eh_fii", False), ("setor", None)]:
             df[coluna] = [dados.get(t, {}).get(coluna, padrao) for t in df["ticker"]]
@@ -318,3 +334,21 @@ def _pct(valor: Any) -> str | None:
         return f"{float(valor):.1f}%"
     except (TypeError, ValueError):
         return None
+
+
+def _limpa(valor: Any, padrao: Any = None) -> Any:
+    """Converte NaN/pd.NA em None.
+
+    No pandas 3.0 a coluna de string usa NaN como valor ausente, e NaN não é
+    JSON válido — sem esta troca o navegador falha em response.json().
+    """
+    if valor is None:
+        return padrao
+    try:
+        if valor is pd.NA:
+            return padrao
+    except Exception:  # noqa: BLE001
+        pass
+    if isinstance(valor, float) and valor != valor:
+        return padrao
+    return valor

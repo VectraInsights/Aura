@@ -184,14 +184,21 @@ Aura/
 
 ## Limitações conhecidas
 
+- **A cota free do Gemini é por modelo** (requisições por minuto e por dia). Quando um
+  modelo estoura a cota, o Aura cai automaticamente para o próximo da cadeia — mas se
+  todos estourarem ao mesmo tempo, a chamada falha com 429. A cota da sua conta fica em
+  <https://aistudio.google.com/app/apikey>. Em uso normal, handful de análises por hora
+  cabe folgado.
 - O Fundamentus não publica API: o scraper depende do HTML e quebra se o site mudar.
-  Há cache de 12h, mas uma mudança de layout exige ajuste em `src/dados/fundamentus.py`.
+  Há cache de 12h e um fallback para o último dado conhecido quando a fonte falha, mas
+  uma mudança de layout exige ajuste em `src/dados/fundamentus.py`.
 - O yfinance não cobre todos os papéis (ex.: `BRFS3.SA` não existe). Onde falta dado
   do yfinance, o parecer sai sem preço/proventos — e a IA é instruída a declarar "n/d".
 - O dividend yield do Fundamentus é calculado sobre a cotação do dia e pode divergir
   do provento efetivamente pago (o Aura cruza com a série real de dividendos).
-- A cota free do Gemini tem limite de requisições por dia. A cota atual da sua
-  conta fica em <https://aistudio.google.com/app/apikey>.
+- A triagem enriquece os 45 primeiros colocados com nome, classe e setor; o resto da
+  lista aparece só com os indicadores, porque cada nome exige uma requisição ao
+  Fundamentus.
 - **Ferramenta de estudo.** Não é recomendação de investimento.
 
 ---

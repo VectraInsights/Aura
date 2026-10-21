@@ -37,13 +37,28 @@ const fmtInt = (v) => {
 
 // ------------------------------------------------------------------ API
 async function api(caminho, opcoes) {
-  const resposta = await fetch(API + caminho, opcoes);
-  let corpo = null;
-  try { corpo = await resposta.json(); } catch (_) { corpo = null; }
-  if (!resposta.ok) {
-    throw new Error((corpo && corpo.detail) || `HTTP ${resposta.status}`);
+  const controller = new AbortController();
+  const limite = opcoes && opcoes.timeoutMs ? opcoes.timeoutMs : 45000;
+  const timer = setTimeout(() => controller.abort(), limite);
+  const config = { ...(opcoes || {}), signal: controller.signal };
+  delete config.timeoutMs;
+
+  try {
+    const resposta = await fetch(API + caminho, config);
+    let corpo = null;
+    try { corpo = await resposta.json(); } catch (_) { corpo = null; }
+    if (!resposta.ok) {
+      throw new Error((corpo && corpo.detail) || `HTTP ${resposta.status}`);
+    }
+    return corpo;
+  } catch (e) {
+    if (e.name === "AbortError") {
+      throw new Error(`A requisição excedeu ${Math.round(limite / 1000)}s e foi cancelada. A fonte de dados pode estar lenta — tente novamente em instantes.`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-  return corpo;
 }
 
 // ------------------------------------------------------------------ estado da UI
@@ -80,7 +95,7 @@ async function init() {
     const perfis = await api("/api/perfis");
     state.perfisTriagem = perfis.triagem;
     state.perfisAnalise = perfis.analise;
-    montar selects();
+    montarSelects();
   } catch (e) {
     mostrarErro(`Não foi possível carregar os perfis: ${e.message}`);
   }
@@ -133,7 +148,7 @@ async function executarTriagem() {
     const perfil = $("perfil").value;
     const limite = $("limite").value;
     const fiis = $("incluir-fiis").checked;
-    const dados = await api(`/api/triagem?perfil=${perfil}&limite=${limite}&incluir_fiis=${fiis}`);
+    const dados = await api(`/api/triagem?perfil=${perfil}&limite=${limite}&incluir_fiis=${fiis}`, { timeoutMs: 60000 });
 
     state.colunas = dados.colunas;
     state.resultados = dados.resultados;
@@ -324,7 +339,7 @@ async function analisar(ticker, perfil) {
   $("drawer-body").innerHTML = `<div class="loader"><div class="spinner"></div><p>Analisando ${ticker}…</p></div>`;
 
   try {
-    const dados = await api(`/api/analise/${encodeURIComponent(ticker)}?perfil=${per}`);
+    const dados = await api(`/api/analise/${encodeURIComponent(ticker)}?perfil=${per}`, { timeoutMs: 90000 });
     renderParecer(ticker, dados);
   } catch (e) {
     $("drawer-nome").textContent = "";
@@ -345,6 +360,7 @@ async function analisarLote() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tickers, perfil: $("perfil-ia").value }),
+      timeoutMs: 120000,
     });
     $("drawer-body").innerHTML = "";
     (dados.resultados || []).forEach((r) => {
