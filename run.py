@@ -286,7 +286,7 @@ def cmd_verificar(args: argparse.Namespace) -> int:
 
         from api.index import app
 
-        cliente = TestClient(app)
+        cliente = TestClient(app, base_url="https://testserver")
         for rota in ["/api/health", "/api/sessao", "/", "/assets/app.js"]:
             resposta = cliente.get(rota)
             ok = resposta.status_code == 200
@@ -295,6 +295,45 @@ def cmd_verificar(args: argparse.Namespace) -> int:
                 return 1
     except Exception as exc:  # noqa: BLE001
         print(f"  !! a aplicação não sobe: {type(exc).__name__}: {exc}")
+        return 1
+
+    # 3) As formas de caminho que a Vercel entrega funcionam?
+    #    A Vercel reescreve /api/x para /api/index.py e entrega o caminho já
+    #    reescrito. Se a normalização falhar, vem 404 ou 405.
+    print("\nFormas de caminho (como a Vercel entrega):")
+    formas = [
+        ("GET", "/api/health"),
+        ("GET", "/api/perfis"),
+        ("GET", "/api/index.py/health"),
+        ("GET", "/api/index.py/perfis"),
+        ("GET", "/api/api/perfis"),
+        ("POST", "/api/login"),
+        ("POST", "/api/index.py/login"),
+        ("POST", "/api/monitor/verificar"),
+        ("POST", "/api/index.py/monitor/verificar"),
+    ]
+    try:
+        from fastapi.testclient import TestClient
+
+        from api.index import app
+
+        cliente = TestClient(app, base_url="https://testserver")
+        from src.config import CONFIG
+
+        if CONFIG.app_password:
+            cliente.post("/api/login", json={"senha": CONFIG.app_password})
+        for metodo, caminho in formas:
+            if metodo == "POST":
+                resposta = cliente.post(caminho, json={})
+            else:
+                resposta = cliente.get(caminho)
+            # 401 é esperado (sem sessão): o que não pode é 404 ou 405.
+            ok = resposta.status_code not in (404, 405)
+            print(f"  {'OK ' if ok else '!! '} {metodo:4s} {caminho:34s} -> {resposta.status_code}")
+            if not ok:
+                return 1
+    except Exception as exc:  # noqa: BLE001
+        print(f"  !! não foi possível testar as formas de caminho: {exc}")
         return 1
 
     print("\n\033[32mTudo certo.\033[0m")
