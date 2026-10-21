@@ -305,8 +305,8 @@ def cmd_verificar(args: argparse.Namespace) -> int:
         return 1
 
     # 3) As formas de caminho que a Vercel entrega funcionam?
-    #    A Vercel reescreve /api/x para /api/index.py e entrega o caminho já
-    #    reescrito. Se a normalização falhar, vem 404 ou 405.
+    #    A Vercel entrega o caminho de DESTINO do rewrite e descarta o
+    #    original. O resgate e a query string (?rota=), que sobrevive.
     print("\nFormas de caminho (como a Vercel entrega):")
     formas = [
         ("GET", "/api/health"),
@@ -314,10 +314,14 @@ def cmd_verificar(args: argparse.Namespace) -> int:
         ("GET", "/api/index.py/health"),
         ("GET", "/api/index.py/perfis"),
         ("GET", "/api/api/perfis"),
+        ("GET", "/api/index.py?rota=/perfis"),
+        ("GET", "/api?rota=/perfis"),
+        ("GET", "/api?rota=/diagnostico"),
         ("POST", "/api/login"),
         ("POST", "/api/index.py/login"),
+        ("POST", "/api?rota=/login"),
         ("POST", "/api/monitor/verificar"),
-        ("POST", "/api/index.py/monitor/verificar"),
+        ("POST", "/api?rota=/monitor/verificar"),
     ]
     try:
         from fastapi.testclient import TestClient

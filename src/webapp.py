@@ -91,12 +91,33 @@ if SESSAO_DISPONIVEL:
 async def normaliza_caminho(request: Request, call_next):
     """Normaliza o caminho recebido pela função.
 
-    O Vercel pode entregar o caminho já reescrito (/api/index.py/x, /api/api/x)
-    ou sem o prefixo (/x). Em vez de adivinhar formatos, a regra é única:
-    remove segmentos com .py e passa a valer o ÚLTIMO "/api" do caminho.
-    Qualquer caminho que não contenha "/api" recebe o prefixo na frente.
+    A Vercel, em `rewrites`, entrega ao app o caminho de DESTINO e descarta o
+    original: `/api/perfis` chega como `/api/index.py`. Isso colapsaria todas as
+    rotas numa só (e os POST em 405).
+
+    Resgate em duas camadas:
+      1. o cliente manda a rota pretendida em `?rota=` — a query string
+         sobrevive ao rewrite, então é o canal confiável;
+      2. se não houver `?rota=`, normaliza as formas reescritas removendo
+         segmentos .py e usando o ÚLTIMO "/api" do caminho.
     """
     caminho = request.scope.get("path", "")
+
+    # Camada 1: rota enviada pelo cliente na query string.
+    consulta = request.scope.get("query_string", b"")
+    if consulta:
+        from urllib.parse import parse_qs
+
+        params = parse_qs(consulta.decode("utf-8", errors="replace"))
+        rota = (params.get("rota") or [""])[0]
+        if rota:
+            rota = rota if rota.startswith("/") else "/" + rota
+            novo = "/api" + rota if not rota.startswith("/api") else rota
+            if novo != caminho:
+                request.scope["path"] = novo
+                request.scope["raw_path"] = caminho.encode()
+            return await call_next(request)
+
     if caminho in ("", "/"):
         return await call_next(request)  # "/" é o frontend, servido pelo StaticFiles
 

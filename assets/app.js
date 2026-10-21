@@ -35,25 +35,39 @@ const fmtInt = (v) => {
 };
 
 // ------------------------------------------------------------------ API
-// O prefixo da API é descoberto em tempo de execução: o Vercel pode
+// O prefixo da API é descoberto em tempo de execução: a Vercel pode
 // entregar as rotas reescritas (/api/index.py/...) e um proxy pode
 // remover o prefixo. Descobrir o que responde evita tela quebrada.
+//
+// Toda chamada leva ?rota=<caminho>: a query string sobrevive ao rewrite
+// da Vercel (que descarta o caminho original), então é ela que garante
+// que a API receba a rota certa.
 let BASE_API = "/api";
+
+function urlDaApi(caminho) {
+  const partes = String(caminho).split("?");
+  const rota = partes[0];
+  const params = new URLSearchParams(partes[1] || "");
+  params.set("rota", rota);
+  return `${BASE_API}?${params.toString()}`;
+}
 
 async function descobrirBase() {
   const candidatos = ["/api", "", "/api/index.py"];
   for (const base of candidatos) {
     try {
-      const resposta = await fetch(base + "/health", { headers: { Accept: "application/json" } });
+      const anterior = BASE_API;
+      BASE_API = base;
+      const resposta = await fetch(urlDaApi("/health"), { headers: { Accept: "application/json" } });
       const texto = await resposta.text();
       let corpo = null;
       try { corpo = JSON.parse(texto); } catch (_) { corpo = null; }
       // A API responde JSON. A protecao da Vercel devolveria HTML de login,
       // que nao parseia — assim o prefixo errado nunca e aceito.
       if (corpo && (corpo.status || corpo.versao || corpo.detail)) {
-        BASE_API = base;
         return base;
       }
+      BASE_API = anterior;
     } catch (_) { /* tenta o próximo */ }
   }
   return BASE_API;
@@ -67,7 +81,7 @@ async function api(caminho, opcoes) {
   delete config.timeoutMs;
 
   try {
-    const resposta = await fetch(BASE_API + caminho, config);
+    const resposta = await fetch(urlDaApi(caminho), config);
     const texto = await resposta.text();
     let corpo = null;
     try { corpo = texto ? JSON.parse(texto) : null; } catch (_) { corpo = null; }
