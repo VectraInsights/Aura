@@ -1,0 +1,489 @@
+/* Aura — lógica da interface (vanilla JS, sem build). */
+"use strict";
+
+const API = "";
+const state = {
+  perfisTriagem: [],
+  perfisAnalise: [],
+  colunas: [],
+  resultados: [],
+  selecionados: new Set(),
+  ordenacao: { chave: null, asc: true },
+  ultimoPerfil: null,
+};
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, texto) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (texto !== undefined) n.textContent = texto;
+  return n;
+};
+
+// ------------------------------------------------------------------ formatação
+const fmtNum = (v, casas = 2) => {
+  if (v === null || v === undefined || Number.isNaN(v)) return "—";
+  return v.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
+};
+const fmtPct = (v) => (v === null || v === undefined || Number.isNaN(v) ? "—" : `${fmtNum(v, 1)}%`);
+const fmtInt = (v) => {
+  if (v === null || v === undefined || Number.isNaN(v)) return "—";
+  const abs = Math.abs(v);
+  if (abs >= 1e12) return `${(v / 1e12).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} tri`;
+  if (abs >= 1e9) return `${(v / 1e9).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} bi`;
+  if (abs >= 1e6) return `${(v / 1e6).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi`;
+  return v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+};
+
+// ------------------------------------------------------------------ API
+async function api(caminho, opcoes) {
+  const resposta = await fetch(API + caminho, opcoes);
+  let corpo = null;
+  try { corpo = await resposta.json(); } catch (_) { corpo = null; }
+  if (!resposta.ok) {
+    throw new Error((corpo && corpo.detail) || `HTTP ${resposta.status}`);
+  }
+  return corpo;
+}
+
+// ------------------------------------------------------------------ estado da UI
+function mostrarLoader(texto) {
+  $("loader-text").textContent = texto;
+  $("loader").hidden = false;
+  $("error-box").hidden = true;
+}
+function esconderLoader() { $("loader").hidden = true; }
+
+function mostrarErro(msg) {
+  $("error-box").hidden = false;
+  $("error-text").textContent = msg;
+  $("empty").hidden = true;
+}
+
+function setStatus(texto, classe) {
+  const s = $("status");
+  s.textContent = texto;
+  s.className = `status ${classe || ""}`;
+}
+
+// ------------------------------------------------------------------ init
+async function init() {
+  try {
+    const saude = await api("/api/health");
+    setStatus(saude.ia_configurada ? `IA pronta · ${saude.modelo_padrao}` : "IA não configurada",
+      saude.ia_configurada ? "ok" : "fail");
+  } catch (e) {
+    setStatus("API offline", "fail");
+  }
+
+  try {
+    const perfis = await api("/api/perfis");
+    state.perfisTriagem = perfis.triagem;
+    state.perfisAnalise = perfis.analise;
+    montar selects();
+  } catch (e) {
+    mostrarErro(`Não foi possível carregar os perfis: ${e.message}`);
+  }
+}
+
+function montarSelects() {
+  const selPerfil = $("perfil");
+  selPerfil.innerHTML = "";
+  state.perfisTriagem.forEach((p) => {
+    const o = el("option", null, p.rotulo);
+    o.value = p.chave;
+    selPerfil.appendChild(o);
+  });
+  selPerfil.value = "qualidade";
+  atualizarPerfilDescricao();
+
+  const selIa = $("perfil-ia");
+  selIa.innerHTML = "";
+  state.perfisAnalise.forEach((p) => {
+    const o = el("option", null, p.rotulo);
+    o.value = p.chave;
+    selIa.appendChild(o);
+  });
+  selIa.value = "qualidade";
+  atualizarPerfilIaDescricao();
+}
+
+function atualizarPerfilDescricao() {
+  const p = state.perfisTriagem.find((x) => x.chave === $("perfil").value);
+  if (!p) return;
+  $("perfil-desc").textContent = p.descricao;
+  const cx = $("perfil-criterios");
+  cx.innerHTML = "";
+  (p.criterios || []).forEach((c) => cx.appendChild(el("span", null, c)));
+  (p.extras || []).forEach((c) => cx.appendChild(el("span", null, c)));
+}
+
+function atualizarPerfilIaDescricao() {
+  const p = state.perfisAnalise.find((x) => x.chave === $("perfil-ia").value);
+  if (p) $("perfil-ia-desc").textContent = p.descricao;
+}
+
+// ------------------------------------------------------------------ triagem
+async function executarTriagem() {
+  const btn = $("btn-triagem");
+  btn.disabled = true;
+  mostrarLoader("Coletando a B3 inteira e aplicando os filtros…");
+
+  try {
+    const perfil = $("perfil").value;
+    const limite = $("limite").value;
+    const fiis = $("incluir-fiis").checked;
+    const dados = await api(`/api/triagem?perfil=${perfil}&limite=${limite}&incluir_fiis=${fiis}`);
+
+    state.colunas = dados.colunas;
+    state.resultados = dados.resultados;
+    state.selecionados.clear();
+    state.ultimoPerfil = dados.perfil;
+
+    $("results-title").textContent = `Triagem · ${dados.perfil.rotulo}`;
+    $("results-summary").textContent =
+      `${dados.total_aprovado} empresas aprovaram em ${dados.total_mercado} papéis da B3.`;
+    $("results-head").hidden = false;
+    $("empty").hidden = true;
+    $("table-wrap").hidden = false;
+
+    renderTabela();
+    atualizarSelecionados();
+    esconderLoader();
+  } catch (e) {
+    esconderLoader();
+    mostrarErro(`Falha na triagem: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ------------------------------------------------------------------ tabela
+function colunasVisiveis() {
+  const ordem = ["posicao", "ticker", "nome", "cotacao", "divyield", "pl", "pvp",
+    "ev_ebitda", "roe", "roic", "liquidez_corrente", "div_liq_patrimonio",
+    "crescimento_receita_5a", "margem_ebit", "eh_fii"];
+  const disponiveis = state.colunas.map((c) => c.chave);
+  return ordem.filter((c) => disponiveis.includes(c));
+}
+
+function formatarCelula(chave, valor) {
+  if (valor === null || valor === undefined || valor === "") return "—";
+  switch (chave) {
+    case "cotacao": return `R$ ${fmtNum(valor)}`;
+    case "divyield": case "roe": case "roic": case "margem_ebit":
+    case "margem_bruta": case "margem_liquida": case "crescimento_receita_5a":
+      return fmtPct(valor);
+    case "liquidez_diaria": case "patrimonio_liquido": return fmtInt(valor);
+    case "posicao": return String(valor);
+    case "eh_fii": return valor ? "FII" : "";
+    default: return typeof valor === "number" ? fmtNum(valor) : String(valor);
+  }
+}
+
+function classeCelula(chave, valor) {
+  if (valor === null || valor === undefined) return "dim";
+  if (chave === "divyield") return valor >= 8 ? "pos" : "";
+  if (chave === "roe" || chave === "roic") return valor >= 15 ? "pos" : "";
+  if (chave === "pl") return valor > 0 && valor < 10 ? "pos" : "";
+  if (chave === "div_liq_patrimonio") return valor > 1 ? "neg" : "";
+  return "";
+}
+
+function renderTabela() {
+  const visiveis = colunasVisiveis();
+  const rotulos = Object.fromEntries(state.colunas.map((c) => [c.chave, c.rotulo]));
+  const thead = $("tabela").querySelector("thead");
+  const tbody = $("tabela").querySelector("tbody");
+  thead.innerHTML = "";
+  tbody.innerHTML = "";
+
+  // cabecalho
+  const trh = el("tr");
+  const thSel = el("th", "left", "");
+  thSel.style.cursor = "default";
+  trh.appendChild(thSel);
+  visiveis.forEach((chave) => {
+    const th = el("th", chave === "ticker" || chave === "nome" ? "left" : "", rotulos[chave] || chave);
+    th.dataset.chave = chave;
+    if (state.ordenacao.chave === chave) {
+      th.classList.add("sorted");
+      if (state.ordenacao.asc) th.classList.add("asc");
+    }
+    th.addEventListener("click", () => ordenarPor(chave));
+    trh.appendChild(th);
+  });
+  const thAcoes = el("th", "", "");
+  thAcoes.style.cursor = "default";
+  trh.appendChild(thAcoes);
+  thead.appendChild(trh);
+
+  // corpo
+  const termo = ($("busca").value || "").trim().toLowerCase();
+  let linhas = state.resultados;
+  if (termo) {
+    linhas = linhas.filter((r) =>
+      String(r.ticker || "").toLowerCase().includes(termo) ||
+      String(r.nome || "").toLowerCase().includes(termo));
+  }
+
+  linhas.forEach((r) => {
+    const tr = el("tr");
+    if (state.selecionados.has(r.ticker)) tr.classList.add("sel");
+
+    const tdSel = el("td", "left");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = state.selecionados.has(r.ticker);
+    cb.addEventListener("change", () => {
+      if (cb.checked) state.selecionados.add(r.ticker);
+      else state.selecionados.delete(r.ticker);
+      tr.classList.toggle("sel", cb.checked);
+      atualizarSelecionados();
+    });
+    tdSel.appendChild(cb);
+    tr.appendChild(tdSel);
+
+    visiveis.forEach((chave) => {
+      const td = el("td", "");
+      const valor = r[chave];
+      if (chave === "ticker") {
+        td.className = "left cell-ticker";
+        td.appendChild(document.createTextNode(String(valor ?? "—")));
+        if (r.eh_fii) td.appendChild(el("span", "tag", "FII"));
+      } else if (chave === "nome") {
+        td.className = "left cell-nome";
+        td.textContent = valor || "—";
+        td.title = valor || "";
+      } else {
+        td.textContent = formatarCelula(chave, valor);
+        const c = classeCelula(chave, valor);
+        if (c) td.className = c;
+      }
+      tr.appendChild(td);
+    });
+
+    const tdAcoes = el("td");
+    const acoes = el("div", "row-actions");
+    const b1 = el("button", "btn tiny", "Analisar");
+    b1.addEventListener("click", () => analisar(r.ticker));
+    acoes.appendChild(b1);
+    tdAcoes.appendChild(acoes);
+    tr.appendChild(tdAcoes);
+
+    tbody.appendChild(tr);
+  });
+
+  if (!linhas.length) {
+    const tr = el("tr");
+    const td = el("td", "dim", "Nenhuma empresa encontrada com esse filtro.");
+    td.colSpan = visiveis.length + 2;
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+  }
+}
+
+function ordenarPor(chave) {
+  if (state.ordenacao.chave === chave) {
+    state.ordenacao.asc = !state.ordenacao.asc;
+  } else {
+    state.ordenacao.chave = chave;
+    state.ordenacao.asc = true;
+  }
+  const { chave: c, asc } = state.ordenacao;
+  state.resultados.sort((a, b) => {
+    const va = a[c], vb = b[c];
+    if (va === null || va === undefined) return 1;
+    if (vb === null || vb === undefined) return -1;
+    if (typeof va === "number" && typeof vb === "number") return asc ? va - vb : vb - va;
+    return asc ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+  });
+  renderTabela();
+}
+
+function atualizarSelecionados() {
+  $("sel-count").textContent = String(state.selecionados.size);
+  $("btn-lote").disabled = state.selecionados.size === 0;
+}
+
+// ------------------------------------------------------------------ análise
+function abrirDrawer() {
+  $("drawer").hidden = false;
+  $("drawer-backdrop").hidden = false;
+}
+function fecharDrawer() {
+  $("drawer").hidden = true;
+  $("drawer-backdrop").hidden = true;
+}
+
+async function analisar(ticker, perfil) {
+  const per = perfil || $("perfil-ia").value;
+  abrirDrawer();
+  $("drawer-ticker").textContent = ticker;
+  $("drawer-nome").textContent = "gerando parecer…";
+  $("drawer-body").innerHTML = `<div class="loader"><div class="spinner"></div><p>Analisando ${ticker}…</p></div>`;
+
+  try {
+    const dados = await api(`/api/analise/${encodeURIComponent(ticker)}?perfil=${per}`);
+    renderParecer(ticker, dados);
+  } catch (e) {
+    $("drawer-nome").textContent = "";
+    $("drawer-body").innerHTML = `<div class="error-box"><strong>Falha na análise.</strong> ${escapar(e.message)}</div>`;
+  }
+}
+
+async function analisarLote() {
+  const tickers = [...state.selecionados];
+  if (!tickers.length) return;
+  abrirDrawer();
+  $("drawer-ticker").textContent = `Análise em lote (${tickers.length})`;
+  $("drawer-nome").textContent = "";
+  $("drawer-body").innerHTML = `<div class="loader"><div class="spinner"></div><p>Processando ${tickers.join(", ")}…</p></div>`;
+
+  try {
+    const dados = await api("/api/analise-lote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tickers, perfil: $("perfil-ia").value }),
+    });
+    $("drawer-body").innerHTML = "";
+    (dados.resultados || []).forEach((r) => {
+      if (r.ok) {
+        renderParecer(r.ticker, r, true);
+      } else {
+        const box = el("div", "error-box");
+        box.innerHTML = `<strong>${escapar(r.ticker)}</strong> — ${escapar(r.erro || "erro")}`;
+        $("drawer-body").appendChild(box);
+      }
+    });
+  } catch (e) {
+    $("drawer-body").innerHTML = `<div class="error-box"><strong>Falha no lote.</strong> ${escapar(e.message)}</div>`;
+  }
+}
+
+function escapar(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function secao(titulo, corpo, classe) {
+  const s = el("div", "sec");
+  s.appendChild(el("h3", null, titulo));
+  if (Array.isArray(corpo)) {
+    const ul = el("ul", classe || "");
+    corpo.forEach((i) => ul.appendChild(el("li", null, i)));
+    s.appendChild(ul);
+  } else {
+    const p = el("p");
+    p.innerHTML = escapar(corpo).replace(/\n/g, "<br>");
+    s.appendChild(p);
+  }
+  return s;
+}
+
+function renderParecer(ticker, dados, compacto) {
+  const r = dados.relatorio || {};
+  const meta = dados.meta || {};
+  const ctx = dados.contexto || {};
+
+  if (!compacto) {
+    $("drawer-ticker").textContent = `${r.ticker || ticker}`;
+    $("drawer-nome").textContent = ctx.nome || "";
+  } else {
+    const h = el("div");
+    h.style.marginBottom = "26px";
+    h.style.borderBottom = "1px solid var(--line)";
+    h.style.paddingBottom = "10px";
+    h.innerHTML = `<h3 style="font-size:16px">${escapar(r.ticker || ticker)} <span class="hint">${escapar(ctx.nome || "")}</span></h3>`;
+    $("drawer-body").appendChild(h);
+  }
+
+  const alvo = compacto ? $("drawer-body") : $("drawer-body");
+  const frag = document.createDocumentFragment();
+
+  // veredito
+  const v = el("div", "verdict");
+  const score = el("div", "score");
+  score.innerHTML = `${r.nota ?? "—"}/10<small>NOTA</small>`;
+  v.appendChild(score);
+  const vt = el("div");
+  vt.appendChild(el("p", null, r.veredito || "—"));
+  vt.appendChild(el("div", "conf",
+    `Confiança: ${r.confianca || "—"} · ${ctx.tipo || "Ação"} · ${ctx.setor || "setor não informado"}`));
+  v.appendChild(vt);
+  frag.appendChild(v);
+
+  if (r.resumo) frag.appendChild(secao("Resumo técnico", r.resumo));
+
+  const col1 = el("div", "two-col");
+  col1.appendChild(secao("Endividamento", r.endividamento || "n/d"));
+  col1.appendChild(secao("Geração de caixa", r.geracao_caixa || "n/d"));
+  frag.appendChild(col1);
+
+  const col2 = el("div", "two-col");
+  col2.appendChild(secao("Qualidade dos lucros", r.qualidade_lucros || "n/d"));
+  col2.appendChild(secao("Veredito", r.veredito || "n/d"));
+  frag.appendChild(col2);
+
+  if (r.riscos && r.riscos.length) frag.appendChild(secao("Riscos", r.riscos, "risk"));
+  if (r.catalisadores && r.catalisadores.length) frag.appendChild(secao("Catalisadores", r.catalisadores, "catal"));
+  if (r.o_que_monitorar && r.o_que_monitorar.length) frag.appendChild(secao("O que monitorar", r.o_que_monitorar));
+  if (r.alertas && r.alertas.length) frag.appendChild(secao("Alertas e lacunas de dados", r.alertas, "alert"));
+
+  // números de referência
+  const nums = el("div", "sec");
+  nums.appendChild(el("h3", null, "Números de referência"));
+  const ul = el("ul");
+  const bal = ctx.balanco || {};
+  const ind = ctx.indicadores || {};
+  const linhas = [
+    ["Cotação", ctx.cotacao != null ? `R$ ${fmtNum(ctx.cotacao)}` : "n/d"],
+    ["Valor de mercado", fmtInt(ctx.valor_mercado)],
+    ["Balanço", ctx.ultimo_balanco || "n/d"],
+    ["Dívida líquida", fmtInt(bal.div_liquida)],
+    ["Dívida bruta", fmtInt(bal.div_bruta)],
+    ["Caixa", fmtInt(bal.disponibilidades)],
+    ["Patrimônio líquido", fmtInt(bal.patrimonio_liquido)],
+    ["Receita 12m", fmtInt((ctx.dre_anual || {}).receita_liquida)],
+    ["EBIT 12m", fmtInt((ctx.dre_anual || {}).ebit)],
+    ["Lucro líquido 12m", fmtInt((ctx.dre_anual || {}).lucro_liquido)],
+    ["P/L", ind.pl != null ? fmtNum(ind.pl) : "n/d"],
+    ["P/VP", ind.pvp != null ? fmtNum(ind.pvp) : "n/d"],
+    ["ROE", ind.roe != null ? fmtPct(ind.roe) : "n/d"],
+    ["Dividend yield", ind.divyield != null ? fmtPct(ind.divyield) : "n/d"],
+  ];
+  linhas.forEach(([k, v2]) => {
+    const li = el("li");
+    li.innerHTML = `<b>${escapar(k)}:</b> ${escapar(v2)}`;
+    ul.appendChild(li);
+  });
+  nums.appendChild(ul);
+  frag.appendChild(nums);
+
+  const m = el("div", "meta");
+  m.innerHTML = [
+    `modelo <b>${escapar(meta.modelo || "—")}</b>`,
+    `tokens ${meta.tokens_entrada ?? 0}→${meta.tokens_saida ?? 0}`,
+    `${meta.segundos ?? "—"}s`,
+    `foco ${escapar(dados.meta && dados.meta.perfil ? dados.meta.perfil : (state.ultimoPerfil && state.ultimoPerfil.chave) || "—")}`,
+  ].join(" · ");
+  frag.appendChild(m);
+
+  alvo.appendChild(frag);
+  if (!compacto) alvo.scrollTop = 0;
+}
+
+// ------------------------------------------------------------------ eventos
+document.addEventListener("DOMContentLoaded", () => {
+  $("perfil").addEventListener("change", atualizarPerfilDescricao);
+  $("perfil-ia").addEventListener("change", atualizarPerfilIaDescricao);
+  $("limite").addEventListener("input", (e) => { $("limite-out").textContent = e.target.value; });
+  $("btn-triagem").addEventListener("click", executarTriagem);
+  $("btn-lote").addEventListener("click", analisarLote);
+  $("busca").addEventListener("input", renderTabela);
+  $("drawer-close").addEventListener("click", fecharDrawer);
+  $("drawer-backdrop").addEventListener("click", fecharDrawer);
+  $("btn-docs").addEventListener("click", () => window.open("/docs", "_blank"));
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") fecharDrawer(); });
+  init();
+});

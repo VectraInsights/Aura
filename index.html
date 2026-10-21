@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aura — IA de Análise de Investimentos (B3)</title>
+<meta name="description" content="Triagem fundamentalista da B3 e parecer técnico de IA sobre ações e FIIs listados.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>◈</text></svg>">
+<link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">◈</span>
+    <div>
+      <h1>Aura</h1>
+      <p>IA de análise de investimentos · B3</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span class="status" id="status" title="Status da API">conectando…</span>
+    <button class="btn ghost" id="btn-docs" type="button">API</button>
+  </div>
+</header>
+
+<main class="layout">
+
+  <!-- ===================== painel lateral ===================== -->
+  <aside class="sidebar">
+    <section class="card">
+      <h2>Triagem de mercado</h2>
+      <label class="field">
+        <span>Perfil</span>
+        <select id="perfil"></select>
+      </label>
+      <p class="hint" id="perfil-desc"></p>
+      <div class="criteria" id="perfil-criterios"></div>
+
+      <label class="field">
+        <span>Quantidade de resultados</span>
+        <input type="range" id="limite" min="10" max="100" step="10" value="40">
+        <output id="limite-out">40</output>
+      </label>
+
+      <label class="check">
+        <input type="checkbox" id="incluir-fiis">
+        <span>Incluir unidades de FII</span>
+      </label>
+
+      <button class="btn primary" id="btn-triagem" type="button">
+        <span class="btn-label">Executar triagem</span>
+      </button>
+    </section>
+
+    <section class="card">
+      <h2>Parecer da IA</h2>
+      <label class="field">
+        <span>Foco da análise</span>
+        <select id="perfil-ia"></select>
+      </label>
+      <p class="hint" id="perfil-ia-desc"></p>
+      <button class="btn" id="btn-lote" type="button" disabled>
+        Analisar selecionadas (<span id="sel-count">0</span>)
+      </button>
+      <p class="hint">Clique em “Analisar” numa linha para o parecer individual.</p>
+    </section>
+
+    <section class="card about">
+      <h2>Como funciona</h2>
+      <ol>
+        <li><b>Fundamentus</b> entrega a B3 inteira (395 papéis, 22 indicadores) numa requisição.</li>
+        <li>O filtro roda localmente, na escala exata de cada indicador.</li>
+        <li>As aprovadas vão para o <b>Gemini</b> com balanço, DRE e proventos reais.</li>
+      </ol>
+      <p class="hint">Ferramenta de estudo. Não é recomendação de investimento.</p>
+    </section>
+  </aside>
+
+  <!-- ===================== conteúdo ===================== -->
+  <section class="content">
+
+    <div class="results-head" id="results-head" hidden>
+      <div>
+        <h2 id="results-title">Resultados</h2>
+        <p class="hint" id="results-summary"></p>
+      </div>
+      <div class="table-tools">
+        <input type="search" id="busca" placeholder="filtrar por ticker ou nome…">
+      </div>
+    </div>
+
+    <div class="empty" id="empty">
+      <div class="empty-mark">◈</div>
+      <h2>Bem-vindo ao Aura</h2>
+      <p>Escolha um perfil de triagem e execute a varredura para descobrir as empresas
+         que passam no filtro. Depois, peça o parecer técnico da IA para cada uma delas.</p>
+    </div>
+
+    <div class="table-wrap" id="table-wrap" hidden>
+      <table id="tabela">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="loader" id="loader" hidden>
+      <div class="spinner"></div>
+      <p id="loader-text">Consultando o mercado…</p>
+    </div>
+
+    <div class="error-box" id="error-box" hidden>
+      <strong>Ops.</strong> <span id="error-text"></span>
+    </div>
+
+  </section>
+</main>
+
+<!-- ===================== painel do parecer ===================== -->
+<div class="drawer-backdrop" id="drawer-backdrop" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-label="Parecer da IA">
+  <header class="drawer-head">
+    <div>
+      <h2 id="drawer-ticker">—</h2>
+      <p id="drawer-nome" class="hint"></p>
+    </div>
+    <button class="btn ghost" id="drawer-close" type="button" aria-label="Fechar">✕</button>
+  </header>
+  <div class="drawer-body" id="drawer-body"></div>
+</aside>
+
+<script src="/assets/app.js"></script>
+</body>
+</html>
