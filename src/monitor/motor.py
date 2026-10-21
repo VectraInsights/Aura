@@ -75,7 +75,11 @@ class Motor:
         self.store = store or armazenamento()
         self.notificador = notificador or Notificador()
         if historico is None:
-            historico = os.getenv("HISTORICO_ALERTAS", "data/alertas.jsonl")
+            historico = os.getenv("HISTORICO_ALERTAS")
+        if not historico:
+            from ..config import CONFIG
+
+            historico = CONFIG.dados_dir / "alertas.jsonl"
         self.historico = Path(historico)
 
     # ------------------------------------------------------------------ regras

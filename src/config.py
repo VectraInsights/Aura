@@ -67,10 +67,14 @@ class Config:
     app_password: str = field(default_factory=lambda: os.getenv("APP_PASSWORD", "").strip())
     #: Chave de assinatura do cookie de sessão.
     session_secret: str = field(default_factory=lambda: os.getenv("SESSION_SECRET", "").strip())
-    #: Cookie de sessão só por HTTPS (sempre ativo na Vercel).
+    #: Cookie de sessão só por HTTPS. Padrão: sim na Vercel (que serve HTTPS),
+    #: não localmente. Um valor explícito em COOKIE_HTTPS_ONLY sempre vence.
     cookie_https_only: bool = field(
-        default_factory=lambda: bool(os.getenv("VERCEL"))
-        or os.getenv("COOKIE_HTTPS_ONLY", "").strip().lower() in ("1", "true", "sim")
+        default_factory=lambda: (
+            os.getenv("COOKIE_HTTPS_ONLY", "").strip().lower() in ("1", "true", "sim", "yes")
+            if os.getenv("COOKIE_HTTPS_ONLY", "").strip()
+            else bool(os.getenv("VERCEL"))
+        )
     )
     #: Validade da sessão, em segundos (padrão: 7 dias).
     session_max_age: int = field(default_factory=lambda: _int_env("SESSION_MAX_AGE", 7 * 24 * 3600))
@@ -83,6 +87,19 @@ class Config:
     @property
     def tem_chave_ia(self) -> bool:
         return bool(self.gemini_api_key)
+
+    @property
+    def dados_dir(self) -> Path:
+        """Onde gravar regras e histórico.
+
+        Na Vercel o disco do projeto é somente-leitura: cai para dentro do
+        cache (que fica em /tmp) em vez de estourar permissão na escrita.
+        """
+        if os.getenv("DADOS_DIR"):
+            return Path(os.getenv("DADOS_DIR"))
+        if os.getenv("VERCEL") or not os.access(RAIZ, os.W_OK):
+            return self.cache_dir / "dados"
+        return RAIZ / "data"
 
     @property
     def headers(self) -> dict[str, str]:

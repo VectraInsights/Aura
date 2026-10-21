@@ -114,7 +114,11 @@ class ArmazenamentoArquivo(Armazenamento):
 
     def __init__(self, caminho: Path | str | None = None):
         if caminho is None:
-            caminho = os.getenv("REGRAS_ARQUIVO", "data/regras.json")
+            caminho = os.getenv("REGRAS_ARQUIVO")
+        if not caminho:
+            from ..config import CONFIG
+
+            caminho = CONFIG.dados_dir / "regras.json"
         self.caminho = Path(caminho)
 
     def carregar(self) -> list[Regra]:

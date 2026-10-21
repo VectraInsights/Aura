@@ -8,3 +8,7 @@ lxml
 yfinance
 google-genai
 python-dotenv
+# OBRIGATÓRIO: o Starlette só traz oitsdangerous no extra [full], e o
+# fastapi puro não o instala. Sem ele, o SessionMiddleware (login) derruba
+# a função inteira no load da Vercel (500 FUNCTION_INVOCATION_FAILED).
+itsdangerous

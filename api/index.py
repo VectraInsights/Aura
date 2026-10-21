@@ -29,7 +29,17 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request  
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import JSONResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
-from starlette.middleware.sessions import SessionMiddleware  # noqa: E402
+
+try:
+    from starlette.middleware.sessions import SessionMiddleware
+
+    SESSAO_DISPONIVEL = True
+except ImportError:  # pragma: no cover - só sem o itsdangerous instalado
+    # Sem itsdangerous não há cookie assinado. Melhor abrir a aplicação
+    # (sem login) do que derrubar a função inteira.
+    SessionMiddleware = None  # type: ignore[assignment]
+    SESSAO_DISPONIVEL = False
+    print("[aviso] itsdangerous ausente: o login por senha fica desativado.")
 
 from src.analise import Analista  # noqa: E402
 from src.config import CONFIG, VERSAO_APP  # noqa: E402
@@ -67,13 +77,14 @@ def _segredo_sessao() -> str:
     return secrets.token_urlsafe(48)
 
 
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=_segredo_sessao(),
-    max_age=CONFIG.session_max_age,
-    same_site="lax",
-    https_only=CONFIG.cookie_https_only,
-)
+if SESSAO_DISPONIVEL:
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=_segredo_sessao(),
+        max_age=CONFIG.session_max_age,
+        same_site="lax",
+        https_only=CONFIG.cookie_https_only,
+    )
 
 
 @app.middleware("http")
@@ -123,9 +134,19 @@ async def normaliza_caminho(request: Request, call_next):
     return await call_next(request)
 
 
+def _sessao(request: Request) -> dict:
+    """Sessão do request, ou dicionário vazio se o login não estiver disponível."""
+    if not SESSAO_DISPONIVEL:
+        return {}
+    try:
+        return request.session
+    except AssertionError:
+        return {}
+
+
 def exigir_sessao(request: Request) -> None:
     """Dependência que bloqueia as rotas de dados sem sessão iniciada."""
-    if not CONFIG.login_ativo:
+    if not CONFIG.login_ativo or not SESSAO_DISPONIVEL:
         return
     if not request.session.get("autenticado"):
         raise HTTPException(
@@ -174,12 +195,13 @@ def _exiguir_ia() -> None:
 @router.get("/sessao")
 def sessao(request: Request) -> dict:
     """Estado da sessão — o frontend usa isto para decidir se mostra o login."""
-    autenticado = bool(request.session.get("autenticado")) or not CONFIG.login_ativo
+    dados = _sessao(request)
+    autenticado = bool(dados.get("autenticado")) or not CONFIG.login_ativo
     return {
         "autenticado": autenticado,
-        "login_ativo": CONFIG.login_ativo,
-        "perfil_preenchido": perfil_completo(request.session.get("perfil")),
-        "usuario": request.session.get("usuario"),
+        "login_ativo": CONFIG.login_ativo and SESSAO_DISPONIVEL,
+        "perfil_preenchido": perfil_completo(dados.get("perfil")),
+        "usuario": dados.get("usuario"),
     }
 
 
@@ -192,6 +214,11 @@ async def login(request: Request) -> dict:
     """
     if not CONFIG.login_ativo:
         return {"autenticado": True, "mensagem": "Login desativado."}
+    if not SESSAO_DISPONIVEL:
+        raise HTTPException(
+            status_code=503,
+            detail="Login indisponível: o pacote itsdangerous não está instalado.",
+        )
 
     senha = ""
     tipo = request.headers.get("content-type", "")
@@ -214,16 +241,16 @@ async def login(request: Request) -> dict:
         time.sleep(0.4)  # desacelera tentativas em massa
         raise HTTPException(status_code=401, detail="Senha incorreta.")
 
-    request.session.clear()
-    request.session["autenticado"] = True
-    request.session["usuario"] = "voce"
+    _sessao(request).clear()
+    _sessao(request)["autenticado"] = True
+    _sessao(request)["usuario"] = "voce"
     return {"autenticado": True, "mensagem": "Acesso liberado."}
 
 
 @router.post("/logout")
 def logout(request: Request) -> dict:
     """Encerra a sessão."""
-    request.session.clear()
+    _sessao(request).clear()
     return {"autenticado": False}
 
 
@@ -343,8 +370,8 @@ def perfil_atual(request: Request) -> dict:
     """Questionário do onboarding + as respostas já dadas."""
     return {
         "questoes": QUESTOES,
-        "respostas": request.session.get("perfil") or {},
-        "preenchido": perfil_completo(request.session.get("perfil")),
+        "respostas": _sessao(request).get("perfil") or {},
+        "preenchido": perfil_completo(_sessao(request).get("perfil")),
     }
 
 
@@ -375,7 +402,7 @@ async def salvar_perfil(request: Request) -> dict:
                 continue
         respostas[campo] = valor
 
-    request.session["perfil"] = respostas
+    _sessao(request)["perfil"] = respostas
     return {
         "perfil_preenchido": perfil_completo(respostas),
         "respostas": respostas,
@@ -479,7 +506,7 @@ def analise(
             get_analista().parecer(
                 ticker,
                 perfil_ia=perfil,
-                perfil_investidor=request.session.get("perfil") or None,
+                perfil_investidor=_sessao(request).get("perfil") or None,
             )
         )
     except ErroIA as exc:
@@ -510,7 +537,7 @@ def analise_lote(payload: dict, request: Request) -> dict:
             parecer = get_analista().parecer(
                 ticker,
                 perfil_ia=perfil,
-                perfil_investidor=request.session.get("perfil") or None,
+                perfil_investidor=_sessao(request).get("perfil") or None,
             )
             parecer["meta"]["perfil"] = perfil
             return {"ticker": ticker, "ok": True, **parecer}
