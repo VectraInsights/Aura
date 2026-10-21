@@ -63,7 +63,13 @@ class Config:
     )
 
     # ------------------------------------------------------------------ login
-    #: Senha de acesso. Vazio = aplicação aberta (sem login).
+    #: Login ligado? Precisa de DUAS coisas: a flag ATIVAR_LOGIN e a senha.
+    #: Assim, uma APP_PASSWORD esquecida no ambiente não tranca a aplicação.
+    ativar_login: bool = field(
+        default_factory=lambda: os.getenv("ATIVAR_LOGIN", "").strip().lower()
+        in ("1", "true", "sim", "yes")
+    )
+    #: Senha de acesso (usada quando ATIVAR_LOGIN estiver ligado).
     app_password: str = field(default_factory=lambda: os.getenv("APP_PASSWORD", "").strip())
     #: Chave de assinatura do cookie de sessão.
     session_secret: str = field(default_factory=lambda: os.getenv("SESSION_SECRET", "").strip())
@@ -81,8 +87,8 @@ class Config:
 
     @property
     def login_ativo(self) -> bool:
-        """Há senha configurada? Se não, a aplicação fica aberta."""
-        return bool(self.app_password)
+        """Há login configurado? Precisa da flag E da senha."""
+        return bool(self.app_password) and self.ativar_login
 
     @property
     def tem_chave_ia(self) -> bool:

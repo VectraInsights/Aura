@@ -198,15 +198,16 @@ Sem Supabase e sem banco de dados: **senha única + cookie de sessão assinado**
 
 | Variável | Para que serve |
 |---|---|
-| `APP_PASSWORD` | Senha de acesso. **Vazio = aplicação aberta** (sem login). |
-| `SESSION_SECRET` | Chave de assinatura do cookie. Sem ela, a sessão morre a cada reinício. |
+| `ATIVAR_LOGIN` | `true` liga o login. **Padrão: desligado.** |
+| `APP_PASSWORD` | A senha. Só tem efeito com `ATIVAR_LOGIN=true`. |
+| `SESSION_SECRET` | Assina o cookie. Sem ela, a sessão morre a cada reinício. |
 | `SESSION_MAX_AGE` | Validade da sessão em segundos (padrão 7 dias). |
 
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(48))"   # gera a SESSION_SECRET
 ```
 
-O arquivo `.env` é só para uso local. Na Vercel, as duas variáveis vão em
+O arquivo `.env` é só para uso local. Na Vercel, as variáveis vão em
 *Settings → Environment Variables* (nos três ambientes).
 
 ### Onboarding: a IA pergunta quem você é
@@ -254,10 +255,15 @@ Vercel → seu projeto → Settings → Environment Variables → Add Variable
 | Nome | Valor | Ambiente |
 |---|---|---|
 | `GEMINI_API_KEY` | sua chave do AI Studio | **Production, Preview e Development** |
-| `APP_PASSWORD` | senha de acesso (veja `python run.py senha`) | **Production, Preview e Development** |
-| `SESSION_SECRET` | assinatura do cookie de sessão | **Production** (vale Preview) |
+| `ATIVAR_LOGIN` | `true` para ligar o login (padrão: desligado) | Production |
+| `APP_PASSWORD` | senha de acesso (só usada se `ATIVAR_LOGIN=true`) | Production |
+| `SESSION_SECRET` | assinatura do cookie de sessão | Production (vale Preview) |
 | `GEMINI_MODEL` | `gemini-3.6-flash` (opcional) | Production |
 | `GEMINI_MODELOS_FALLBACK` | `gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3-flash-preview` (opcional) | Production |
+
+> O login é **opt-in**: só liga com `ATIVAR_LOGIN=true` **e** `APP_PASSWORD`
+> preenchida. Assim, uma senha esquecida no ambiente não tranca a aplicação —
+> basta um redeploy para reabrir.
 
 > Marque os três ambientes. Se a variável existir só em "Development", a produção
 > responde `503 ia_configurada: false` — a interface sobe, mas nenhum parecer sai.
