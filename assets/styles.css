@@ -576,8 +576,108 @@ tbody tr.sel { background: rgba(34, 211, 238, 0.07); }
 .wizard-navegacao .btn.primary { min-width: 132px; }
 .wizard-espaco { flex: 1; }
 
+/* ---------------------------------------------------------------- radar */
+.radar-card { border-color: rgba(124, 92, 255, 0.35); }
+
+.radar-panel { width: min(820px, 100%); text-align: left; max-height: 92vh; overflow-y: auto; }
+
+.radar-resumo {
+  font-size: 14px;
+  color: #d4d7ea;
+  padding: 13px 15px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  border: 1px solid rgba(124, 92, 255, 0.28);
+  margin-bottom: 18px;
+}
+
+.radar-classe { margin-bottom: 22px; }
+.radar-classe h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--accent-2);
+  margin-bottom: 10px;
+}
+
+.radar-item {
+  display: flex;
+  gap: 13px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  margin-bottom: 8px;
+}
+.radar-pos {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-faint);
+  min-width: 24px;
+  font-variant-numeric: tabular-nums;
+}
+.radar-item .radar-pos.top { color: var(--accent); }
+.radar-corpo { flex: 1; min-width: 0; }
+.radar-topo {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-bottom: 3px;
+}
+.radar-ticker { font-weight: 650; font-size: 14px; }
+.radar-nota {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: #b9a9ff;
+  font-variant-numeric: tabular-nums;
+}
+.radar-veredito { font-size: 13.5px; color: var(--text); margin-bottom: 4px; }
+.radar-motivo { font-size: 12.5px; color: var(--text-dim); }
+.radar-cuidado { font-size: 12.5px; color: var(--warn); margin-top: 3px; }
+.radar-evitar {
+  border-color: rgba(248, 113, 113, 0.28);
+  background: rgba(248, 113, 113, 0.05);
+}
+.radar-evitar .radar-ticker { color: #fca5a5; }
+
+.radar-alertas {
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  background: rgba(251, 191, 36, 0.06);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 18px;
+}
+.radar-alertas h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; color: var(--warn); margin-bottom: 7px; }
+.radar-alertas ul { margin: 0; padding-left: 17px; font-size: 13px; color: #d4d7ea; }
+
+.radar-base { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 12px; }
+.radar-base summary { cursor: pointer; font-size: 12.5px; color: var(--text-dim); }
+.radar-base summary:hover { color: var(--accent-2); }
+.radar-base > div { margin-top: 10px; font-size: 12.5px; color: var(--text-dim); }
+.radar-base h4 { font-size: 12px; color: var(--accent-2); margin: 10px 0 3px; }
+.radar-base p { margin-bottom: 6px; }
+
+/* ---------------------------------------------------------------- abas de classe */
+.classe-tabs { display: flex; gap: 4px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 9px; padding: 3px; }
+.classe-tab {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  padding: 6px 13px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12.5px;
+  transition: background .12s, color .12s;
+}
+.classe-tab:hover { color: var(--text); }
+.classe-tab.ativa { background: var(--accent); color: #fff; }
+
 @media (max-width: 940px) {
   .layout { grid-template-columns: 1fr; padding: 16px; }
   .sidebar { position: static; }
   .table-wrap { max-height: none; }
+  .table-tools { flex-direction: column; align-items: stretch; }
 }

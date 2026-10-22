@@ -30,6 +30,18 @@
 
   <!-- ===================== painel lateral ===================== -->
   <aside class="sidebar">
+    <section class="card radar-card">
+      <h2>Radar de compra</h2>
+      <p class="hint">
+        A IA reordena os candidatos <b>pelo que recomenda para o seu perfil</b>,
+        separando por classe de ativo. Não é a ordem do filtro.
+      </p>
+      <button class="btn primary" id="btn-radar" type="button">
+        <span class="btn-label">Gerar radar</span>
+      </button>
+      <p class="hint" id="radar-info"></p>
+    </section>
+
     <section class="card">
       <h2>Triagem de mercado</h2>
       <label class="field">
@@ -129,6 +141,11 @@
         <p class="hint" id="results-summary"></p>
       </div>
       <div class="table-tools">
+        <div class="classe-tabs" id="classe-tabs">
+          <button class="classe-tab ativa" data-classe="">Todas</button>
+          <button class="classe-tab" data-classe="Ação">Ações</button>
+          <button class="classe-tab" data-classe="FII">FIIs</button>
+        </div>
         <input type="search" id="busca" placeholder="filtrar por ticker ou nome…">
       </div>
     </div>
@@ -210,6 +227,30 @@
     </div>
 
     <p class="erro-login" id="onboarding-erro" hidden></p>
+  </div>
+</div>
+
+<!-- ===================== radar de compra ===================== -->
+<div class="overlay" id="radar-overlay" hidden>
+  <div class="panel radar-panel">
+    <div class="wizard-topo">
+      <div>
+        <p class="wizard-etapa">Radar de compra</p>
+        <h2 class="wizard-titulo" id="radar-titulo">O que a IA recomenda agora</h2>
+      </div>
+      <button class="btn ghost" id="radar-close" type="button">Fechar</button>
+    </div>
+
+    <div class="wizard-trilha"><div class="wizard-barra" id="radar-barra"></div></div>
+
+    <div id="radar-corpo"></div>
+
+    <details class="radar-base">
+      <summary>Em que a IA se baseou</summary>
+      <div id="radar-criterios"></div>
+    </details>
+
+    <p class="hint" id="radar-meta"></p>
   </div>
 </div>
 

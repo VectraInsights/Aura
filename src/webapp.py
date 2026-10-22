@@ -434,6 +434,71 @@ async def salvar_perfil(request: Request) -> dict:
     }
 
 
+@router_protegido.post("/radar")
+async def radar(
+    request: Request,
+    perfil: str = Query("qualidade", description="Perfil de triagem que gera os candidatos"),
+    limite: int = Query(12, ge=3, le=30),
+    incluir_fiis: bool = Query(True),
+) -> dict:
+    """Radar de compra: a IA ordena os candidatos para o perfil de quem pergunta.
+
+    Diferente da triagem (mecânica, ordenada por um indicador), aqui a ordem
+    é da IA — e vem com o motivo de cada posição.
+    """
+    from .radar import (
+        CRITERIOS_POR_CLASSE,
+        INSTRUCAO_RADAR,
+        LIMITES_DO_RADAR,
+        classificar_por_classe,
+        construir_prompt_radar,
+        montar_candidatos,
+        schema_radar,
+    )
+
+    try:
+        candidatos = montar_candidatos(
+            get_analista(),
+            perfil_triagem=perfil,
+            limite=limite,
+            incluir_fiis=incluir_fiis,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Falha ao montar os candidatos: {exc}") from exc
+
+    if not candidatos:
+        raise HTTPException(status_code=404, detail="Nenhum candidato encontrado.")
+
+    prompt = construir_prompt_radar(candidatos, _sessao(request).get("perfil") or None, perfil)
+
+    try:
+        resultado = get_analista().cliente_ia.gerar(
+            prompt=prompt,
+            instrucao_sistema=INSTRUCAO_RADAR,
+            schema=schema_radar(),
+        )
+    except ErroIA as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Falha ao gerar o radar: {exc}") from exc
+
+    grupos = classificar_por_classe(candidatos)
+    return {
+        "radar": json_seguro(resultado.dados or {}),
+        "candidatos": {classe: [c.ticker for c in itens] for classe, itens in grupos.items()},
+        "criterios": CRITERIOS_POR_CLASSE,
+        "limites": LIMITES_DO_RADAR,
+        "meta": {
+            "modelo": resultado.modelo,
+            "tokens_entrada": resultado.tokens_entrada,
+            "tokens_saida": resultado.tokens_saida,
+            "segundos": round(resultado.segundos, 1),
+            "perfil_triagem": perfil,
+            "total_candidatos": len(candidatos),
+        },
+    }
+
+
 @router.get("/diagnostico")
 def diagnostico(request: Request) -> dict:
     """Diagnóstico do ambiente — útil para conferir deploy e variáveis.

@@ -10,6 +10,7 @@ const state = {
   ordenacao: { chave: null, asc: true },
   ultimoPerfil: null,
   onboarding: null,
+  classeFiltro: "",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -176,6 +177,124 @@ async function sair() {
     await api("/logout", { method: "POST", timeoutMs: 10000 });
   } catch (_) { /* segue o logout local */ }
   location.reload();
+}
+
+// ------------------------------------------------------------------ radar
+async function gerarRadar() {
+  const btn = $("btn-radar");
+  btn.disabled = true;
+  btn.querySelector(".btn-label").textContent = "Analisando…";
+  $("radar-overlay").hidden = false;
+  $("radar-corpo").innerHTML =
+    `<div class="loader"><div class="spinner"></div><p>A IA está reordenando os candidatos…</p></div>`;
+
+  try {
+    const dados = await api(
+      `/radar?perfil=${encodeURIComponent($("perfil").value)}&limite=12&incluir_fiis=true`,
+      { method: "POST", timeoutMs: 180000 }
+    );
+    renderRadar(dados);
+  } catch (e) {
+    $("radar-corpo").innerHTML = `<div class="error-box"><strong>Falha ao gerar o radar.</strong> ${escapar(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.querySelector(".btn-label").textContent = "Gerar radar";
+  }
+}
+
+function renderRadar(dados) {
+  const radar = dados.radar || {};
+  const meta = dados.meta || {};
+  const corpo = $("radar-corpo");
+  corpo.innerHTML = "";
+
+  $("radar-titulo").textContent = "O que a IA recomenda agora";
+  $("radar-barra").style.width = "100%";
+
+  if (radar.resumo) {
+    const resumo = el("div", "radar-resumo");
+    resumo.textContent = radar.resumo;
+    corpo.appendChild(resumo);
+  }
+
+  if ((radar.alertas || []).length) {
+    const caixa = el("div", "radar-alertas");
+    caixa.appendChild(el("h3", null, "Alertas"));
+    const ul = el("ul");
+    (radar.alertas || []).forEach((aviso) => ul.appendChild(el("li", null, aviso)));
+    caixa.appendChild(ul);
+    corpo.appendChild(caixa);
+  }
+
+  (radar.por_classe || []).forEach((grupo) => {
+    const bloco = el("div", "radar-classe");
+    bloco.appendChild(el("h3", null, grupo.classe));
+
+    (grupo.destaques || []).forEach((d, i) => {
+      const item = el("div", "radar-item");
+      item.appendChild(el("div", `radar-pos${i === 0 ? " top" : ""}`, String(d.ranking ?? i + 1)));
+
+      const conteudo = el("div", "radar-corpo");
+      const topo = el("div", "radar-topo");
+      topo.appendChild(el("span", "radar-ticker", d.ticker));
+      if (d.nota !== undefined && d.nota !== null) {
+        topo.appendChild(el("span", "radar-nota", `${d.nota}/10`));
+      }
+      conteudo.appendChild(topo);
+      if (d.veredito) conteudo.appendChild(el("div", "radar-veredito", d.veredito));
+      if (d.motivo) conteudo.appendChild(el("div", "radar-motivo", d.motivo));
+      if (d.cuidados) conteudo.appendChild(el("div", "radar-cuidado", `⚠ ${d.cuidados}`));
+      item.appendChild(conteudo);
+      bloco.appendChild(item);
+    });
+
+    (grupo.evitar || []).forEach((ev) => {
+      const item = el("div", "radar-item radar-evitar");
+      item.appendChild(el("div", "radar-pos", "✕"));
+      const conteudo = el("div", "radar-corpo");
+      const topo = el("div", "radar-topo");
+      topo.appendChild(el("span", "radar-ticker", ev.ticker));
+      conteudo.appendChild(topo);
+      if (ev.motivo) conteudo.appendChild(el("div", "radar-motivo", ev.motivo));
+      item.appendChild(conteudo);
+      bloco.appendChild(item);
+    });
+
+    if (!(grupo.destaques || []).length && !(grupo.evitar || []).length) {
+      const vazio = el("p", "hint", "Nenhum candidato desta classe passou no critério da IA.");
+      bloco.appendChild(vazio);
+    }
+    corpo.appendChild(bloco);
+  });
+
+  // A base do julgamento, visível.
+  const base = $("radar-criterios");
+  base.innerHTML = "";
+  const criterios = dados.criterios || {};
+  Object.keys(criterios).forEach((classe) => {
+    base.appendChild(el("h4", null, classe));
+    base.appendChild(el("p", null, criterios[classe]));
+  });
+  if (dados.limites) {
+    base.appendChild(el("h4", null, "Limites"));
+    base.appendChild(el("p", null, dados.limites));
+  }
+
+  const candidatos = dados.candidatos || {};
+  const total = Object.values(candidatos).reduce((s, l) => s + l.length, 0);
+  $("radar-meta").textContent =
+    `${total} candidatos em ${Object.keys(candidatos).length} classes · ` +
+    `modelo ${meta.modelo} · ${meta.segundos}s · ` +
+    `Leitura da IA sobre números públicos — não é ordem de compra.`;
+}
+
+// ------------------------------------------------------------------ filtro por classe
+function filtrarPorClasse(classe) {
+  state.classeFiltro = classe;
+  document.querySelectorAll(".classe-tab").forEach((b) => {
+    b.classList.toggle("ativa", b.dataset.classe === classe);
+  });
+  renderTabela();
 }
 
 // ------------------------------------------------------------------ monitor
@@ -638,6 +757,9 @@ function renderTabela() {
   // corpo
   const termo = ($("busca").value || "").trim().toLowerCase();
   let linhas = state.resultados;
+  if (state.classeFiltro) {
+    linhas = linhas.filter((r) => (r.tipo || "") === state.classeFiltro);
+  }
   if (termo) {
     linhas = linhas.filter((r) =>
       String(r.ticker || "").toLowerCase().includes(termo) ||
@@ -912,6 +1034,11 @@ document.addEventListener("DOMContentLoaded", () => {
   $("btn-perfil").addEventListener("click", abrirOnboarding);
   $("regra-form").addEventListener("submit", criarRegra);
   $("btn-verificar").addEventListener("click", verificarMonitor);
+  $("btn-radar").addEventListener("click", gerarRadar);
+  $("radar-close").addEventListener("click", () => { $("radar-overlay").hidden = true; });
+  document.querySelectorAll(".classe-tab").forEach((aba) => {
+    aba.addEventListener("click", () => filtrarPorClasse(aba.dataset.classe));
+  });
   $("regra-operador").addEventListener("change", (e) => {
     $("regra-valor2").classList.toggle("oculto", e.target.value !== "entre");
   });

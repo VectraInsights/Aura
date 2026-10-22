@@ -119,6 +119,59 @@ def _awesomeapi(par: str) -> tuple[float | None, float | None]:
 PARES_AWESOME = {"USDBRL=X": "USD-BRL", "EURBRL=X": "EUR-BRL"}
 
 
+def variacoes(ativo: str) -> dict[str, float | None]:
+    """Variações e faixa de 52 semanas.
+
+    Para cripto, moeda e commodity não existe balanço: o que a IA tem é o
+    comportamento do preço. Sem isto, o radar os julgaria às cegas.
+    """
+    from .cache import Cache
+
+    resultado: dict[str, float | None] = {
+        "var_1d": None, "var_7d": None, "var_30d": None, "var_1a": None,
+        "min_52": None, "max_52": None, "pos_52": None,
+    }
+    simbolo = resolver(ativo)
+    if not simbolo:
+        return resultado
+
+    cache = Cache()
+    chave = f"{VERSAO_CACHE}:{simbolo}"
+    guardado = cache.get("variacoes", chave)
+    if guardado is not None:
+        return {**resultado, **guardado}
+
+    try:
+        import yfinance as yf
+
+        hist = yf.Ticker(simbolo).history(period="1y", auto_adjust=False)
+        if hist is None or hist.empty:
+            return resultado
+        closes = hist["Close"]
+        ultimo = float(closes.iloc[-1])
+
+        def _var(periodos: int) -> float | None:
+            if len(closes) <= periodos:
+                return None
+            base = float(closes.iloc[-1 - periodos])
+            return (ultimo / base - 1) * 100 if base else None
+
+        resultado["var_1d"] = _var(1)
+        resultado["var_7d"] = _var(7)
+        resultado["var_30d"] = _var(30)
+        resultado["var_1a"] = _var(len(closes) - 1)
+        resultado["min_52"] = float(closes.min())
+        resultado["max_52"] = float(closes.max())
+        if resultado["max_52"]:
+            resultado["pos_52"] = (ultimo / resultado["max_52"] - 1) * 100
+    except Exception as exc:  # noqa: BLE001
+        log.warning("variacoes falhou para %s: %s", simbolo, exc)
+        return resultado
+
+    cache.set("variacoes", chave, resultado)
+    return resultado
+
+
 def cotacao(ativo: str) -> Cotacao:
     """Busca o preço atual, com fallback automático."""
     simbolo = resolver(ativo)

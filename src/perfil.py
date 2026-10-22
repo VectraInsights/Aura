@@ -98,11 +98,18 @@ QUESTOES: list[dict[str, Any]] = [
         "sufixo": "% ao ano",
     },
     {
+        "campo": "posicoes",
+        "titulo": "Quais posições você já tem?",
+        "ajuda": "A IA usa para não sugerir o que você já possui e para dimensionar o que falta.",
+        "tipo": "texto",
+        "placeholder": "Ex.: PETR4 (200 ações), MXRF11, ITUB4. Ou 'começando do zero'.",
+    },
+    {
         "campo": "observacoes",
         "titulo": "Mais alguma coisa que a IA devia saber?",
         "ajuda": "Setores que quer evitar, nomes que já possui, dúvidas recorrentes…",
         "tipo": "texto",
-        "placeholder": "Ex.: não quero nada de bank's; já tenho VALE3 e PETR4; me explain Bézier…",
+        "placeholder": "Ex.: não quero nada de banco; me explain o balanço…",
     },
 ]
 
@@ -203,6 +210,8 @@ def resumo_para_ia(perfil: dict[str, Any] | None) -> str:
         linhas.append(f"- Porte da carteira: {_TAMANHOS.get(perfil['tamanho'], 'n/d')}.")
     if perfil.get("dy_minimo") not in (None, ""):
         linhas.append(f"- Dividend yield mínimo de interesse: {perfil['dy_minimo']}% ao ano.")
+    if perfil.get("posicoes"):
+        linhas.append(f"- Posições que já possui: {perfil['posicoes']}")
     if perfil.get("observacoes"):
         linhas.append(f"- Observações do investidor: {perfil['observacoes']}")
 
@@ -307,6 +316,15 @@ def instrucoes_estilo(perfil: dict[str, Any] | None) -> str:
     if observacoes:
         instrucoes.append(
             f"Pedido explícito do investidor, a respeitar: {observacoes}"
+        )
+
+    posicoes = str(perfil.get("posicoes") or "").strip()
+    if posicoes and "zero" not in posicoes.lower():
+        instrucoes.append(
+            f"O investidor JÁ POSSUI: {posicoes}. Não recomende comprar o que ele "
+            "já tem — avalie se vale adicionar ou se o nome está caro para a "
+            "carteira atual. Se um candidato for o mesmo ativo que ele já tem, "
+            "diga isso explicitamente."
         )
 
     return "\n".join(instrucoes)
