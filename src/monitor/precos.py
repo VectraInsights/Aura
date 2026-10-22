@@ -125,7 +125,7 @@ def variacoes(ativo: str) -> dict[str, float | None]:
     Para cripto, moeda e commodity não existe balanço: o que a IA tem é o
     comportamento do preço. Sem isto, o radar os julgaria às cegas.
     """
-    from .cache import Cache
+    from ..dados.cache import Cache
 
     resultado: dict[str, float | None] = {
         "var_1d": None, "var_7d": None, "var_30d": None, "var_1a": None,
