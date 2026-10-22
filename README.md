@@ -13,6 +13,21 @@
 **Produção:** https://aura-psi-sage.vercel.app
 **Repositório:** https://github.com/VectraInsights/Aura
 
+## Documentação
+
+| Documento | O que é |
+|---|---|
+| [`docs/como-funciona.pdf`](docs/como-funciona.pdf) | Manual completo: arquitetura, fontes de dados, perfis, o radar, o monitor, deploy e limitações (20 páginas) |
+| [`docs/estado-do-projeto.json`](docs/estado-do-projeto.json) | Estado estruturado do projeto: métricas reais, 18 rotas, 11 problemas resolvidos, 10 decisões de arquitetura e as limitações |
+| [`docs/como-funciona.html`](docs/como-funciona.html) | Fonte do PDF, caso queira regerar ou editar |
+
+Para regerar o PDF (usa o Chrome em modo headless):
+
+```bash
+chrome --headless=new --disable-gpu --no-pdf-header-footer \
+  --print-to-pdf=docs/como-funciona.pdf docs/como-funciona.html
+```
+
 ---
 
 ## Como funciona
@@ -404,6 +419,10 @@ Aura/
 ├── assets/                # frontend estático (sem build)
 │   ├── styles.css
 │   └── app.js
+├── docs/
+│   ├── como-funciona.pdf  # manual completo (20 páginas)
+│   ├── como-funciona.html # fonte do PDF
+│   └── estado-do-projeto.json
 ├── index.html             # interface
 ├── src/
 │   ├── webapp.py          # a aplicação FastAPI (rotas, middlewares, login)
