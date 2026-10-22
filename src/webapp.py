@@ -391,6 +391,35 @@ def canais_monitor() -> dict:
     }
 
 
+@router_protegido.post("/sugestoes/avaliar")
+def avaliar_sugestoes(
+    tickers: list[str] | None = None,
+    taxa_desconto: float = Query(0.10, ge=0.0, le=0.30),
+    limiar_upside: float = Query(15.0, ge=0.0),
+    limiar_downside: float = Query(-15.0, le=0.0),
+) -> dict:
+    """Avalia sugestões de operação para uma lista de tickers e envia alerta
+    quando houver mudança de sinal ou preço cruzar o limiar.
+
+    Corpo opcional: {"tickers": ["PETR4", "VALE3"], "taxa_desconto": 0.10,
+    "limiar_upside": 15.0, "limiar_downside": -15.0}
+    """
+    from src.monitor import Motor
+
+    if tickers is None:
+        tickers = []
+
+    motor = Motor()
+    resultado = motor.avaliar_sugestoes(
+        tickers=tickers,
+        taxa_desconto=taxa_desconto,
+        notificar=True,
+        limiar_upside=limiar_upside,
+        limiar_downside=limiar_downside,
+    )
+    return json_seguro(resultado)
+
+
 @router_protegido.get("/perfil")
 def perfil_atual(request: Request) -> dict:
     """Questionário do onboarding + as respostas já dadas."""

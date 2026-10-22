@@ -187,6 +187,50 @@ def cmd_monitor(args: argparse.Namespace) -> int:
         time.sleep(args.intervalo)
 
 
+def cmd_sugestoes(args: argparse.Namespace) -> int:
+    """Roda o monitor de sugestões de operação em laço contínuo."""
+    import time
+
+    from src.monitor import Motor
+
+    tickers = args.tickers or []
+    motor = Motor()
+    print(f"\n\033[1mMonitor de Sugestões Aura\033[0m")
+    print(f"Tickers: {', '.join(tickers) if tickers else 'nenhum (use --ticker)'}")
+    print(f"Intervalo: {args.intervalo}s · Taxa de desconto: {args.taxa_desconto}")
+    print(f"Limiar upside: {args.limiar_upside}% · Limiar downside: {args.limiar_downside}%")
+    if motor.notificador._email_disponivel():
+        print("Canal de email: Gmail SMTP configurado")
+    else:
+        print("Canal de email: NÃO configurado (defina GMAIL_USER, GMAIL_APP_PASSWORD, EMAIL_DESTINO)")
+    print("(Ctrl+C para sair)\n")
+
+    while True:
+        try:
+            resultado = motor.avaliar_sugestoes(
+                tickers=tickers,
+                taxa_desconto=args.taxa_desconto,
+                notificar=True,
+                limiar_upside=args.limiar_upside,
+                limiar_downside=args.limiar_downside,
+            )
+            for env in resultado.get("enviadas", []):
+                print(
+                    f"\033[33m⚡ {env['sugestao']} — {env['ticker']}\033[0m "
+                    f"score={env['score']:+.1f} preço=R$ {env['preco_atual']:.2f} "
+                    f"justo=R$ {env['preco_justo']:.2f} upside={env['upside']:+.1f}% "
+                    f"[{', '.join(env['canais']) if env['canais'] else 'sem canal'}]"
+                )
+            if not resultado.get("enviadas"):
+                print(f"  {resultado['verificado_em']}  sem sinais de compra/venda")
+        except KeyboardInterrupt:
+            print("\nInterrompido.")
+            return 0
+        except Exception as exc:  # noqa: BLE001
+            print(f"  erro no ciclo: {exc}")
+        time.sleep(args.intervalo)
+
+
 def cmd_regras(args: argparse.Namespace) -> int:
     """Lista as regras de monitoramento."""
     from src.monitor import Motor
@@ -430,6 +474,14 @@ def main() -> int:
     p = sub.add_parser("monitor", help="Monitora as regras de preço em laço contínuo")
     p.add_argument("--intervalo", type=int, default=60, help="Segundos entre verificações")
     p.set_defaults(func=cmd_monitor)
+
+    p = sub.add_parser("sugestoes", help="Monitora sugestões de compra/venda em laço contínuo")
+    p.add_argument("--ticker", action="append", default=[], help="Ticker para acompanhar (pode repetir)")
+    p.add_argument("--intervalo", type=int, default=60, help="Segundos entre verificações")
+    p.add_argument("--taxa-desconto", type=float, default=0.10, help="Taxa de desconto para o Modelo de Gordon")
+    p.add_argument("--limiar-upside", type=float, default=15.0, help="Limiar de upside para notificar compra")
+    p.add_argument("--limiar-downside", type=float, default=-15.0, help="Limiar de downside para notificar venda")
+    p.set_defaults(func=cmd_sugestoes)
 
     p = sub.add_parser("regras", help="Lista as regras de monitoramento")
     p.set_defaults(func=cmd_regras)

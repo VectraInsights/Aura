@@ -24,6 +24,7 @@ from typing import Any
 from .notificador import Notificador, formatar_alerta, montar_payload
 from .precos import cotacao
 from .regras import Armazenamento, Regra, armazenamento
+from ..projecao import sugerir_operacao, projetar
 
 log = logging.getLogger(__name__)
 
@@ -231,3 +232,119 @@ class Motor:
                 except json.JSONDecodeError:
                     continue
         return list(reversed(saida))
+
+    # -------------------------------------------------- sugestões de operação
+    def _caminho_sugestoes(self) -> Path:
+        from ..config import CONFIG
+
+        return CONFIG.dados_dir / "sugestoes.json"
+
+    def _carregar_sugestoes(self) -> dict[str, dict[str, Any]]:
+        caminho = self._caminho_sugestoes()
+        if not caminho.exists():
+            return {}
+        try:
+            return json.loads(caminho.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    def _salvar_sugestoes(self, sugestoes: dict[str, dict[str, Any]]) -> None:
+        caminho = self._caminho_sugestoes()
+        try:
+            caminho.parent.mkdir(parents=True, exist_ok=True)
+            caminho.write_text(
+                json.dumps(sugestoes, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            log.warning("Não foi possível salvar sugestões: %s", exc)
+
+    def avaliar_sugestoes(
+        self,
+        tickers: list[str],
+        taxa_desconto: float = 0.10,
+        notificar: bool = True,
+        limiar_upside: float = 15.0,
+        limiar_downside: float = -15.0,
+    ) -> dict[str, Any]:
+        """Avalia sugestões de operação para uma lista de tickers.
+
+        Compara a sugestão atual com a última registrada. Envia alerta por email
+        (e outros canais configurados) quando:
+          * A sugestão muda (ex: MANTER → COMPRA)
+          * O upside chega ao limiar (preço bem abaixo do justo)
+          * O downside chega ao limiar (preço bem acima do justo)
+        """
+        from ..analise import get_analista
+
+        agora = datetime.now().isoformat(timespec="seconds")
+        anterior = self._carregar_sugestoes()
+        novas: dict[str, dict[str, Any]] = {}
+        enviadas: list[dict[str, Any]] = []
+
+        for ticker in tickers:
+            try:
+                ctx = get_analista().contexto(ticker)
+                if not ctx.indicadores and not ctx.balanco:
+                    continue
+
+                res = sugerir_operacao(
+                    ticker, ctx.as_dict(), taxa_desconto=taxa_desconto
+                )
+                proj = projetar(ticker, ctx.as_dict(), taxa_desconto=taxa_desconto)
+
+                registro_atual = {
+                    "sugestao": res.sugestao.value,
+                    "score": res.score,
+                    "preco_atual": proj.preco_atual,
+                    "preco_justo": proj.preco_justo,
+                    "upside": proj.upside,
+                    "dy_atual": proj.dy_atual,
+                    "avaliado_em": agora,
+                }
+                novas[ticker] = registro_atual
+
+                registro_anterior = anterior.get(ticker)
+                sugestao_mudou = (
+                    registro_anterior is None
+                    or registro_anterior.get("sugestao") != res.sugestao.value
+                )
+
+                upside = proj.upside
+                preco_cruza_justo = False
+                if upside is not None:
+                    if upside >= limiar_upside:
+                        preco_cruza_justo = True  # preço muito abaixo do justo → compra
+                    elif upside <= limiar_downside:
+                        preco_cruza_justo = True  # preço muito acima do justo → venda
+
+                deve_notificar = notificar and (sugestao_mudou or preco_cruza_justo)
+
+                if deve_notificar and res.texto_whatsapp:
+                    titulo = f"Aura · {res.sugestao.value} — {ticker}"
+                    canais = self.notificador.enviar(
+                        titulo, res.texto_whatsapp
+                    )
+                    enviadas.append({
+                        "ticker": ticker,
+                        "sugestao": res.sugestao.value,
+                        "score": res.score,
+                        "preco_atual": proj.preco_atual,
+                        "preco_justo": proj.preco_justo,
+                        "upside": proj.upside,
+                        "motivo": res.motivo,
+                        "canais": canais,
+                        "em": agora,
+                    })
+
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Falha ao avaliar sugestão para %s: %s", ticker, exc)
+
+        self._salvar_sugestoes(novas)
+
+        return {
+            "verificado_em": agora,
+            "avaliados": len(novas),
+            "enviadas": enviadas,
+            "sugestoes": {k: v for k, v in novas.items()},
+        }
