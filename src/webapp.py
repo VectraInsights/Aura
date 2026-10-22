@@ -47,6 +47,7 @@ from src.ia import PERFIS_ANALISE  # noqa: E402
 from src.ia.gemini import ErroIA  # noqa: E402
 from src.perfil import QUESTOES, perfil_completo, resumo_para_ia  # noqa: E402
 from src.screen import PERFIS_TELA  # noqa: E402
+from src.projecao import projetar  # noqa: E402
 
 app = FastAPI(
     title="Aura",
@@ -634,6 +635,44 @@ def analise(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Falha na análise: {exc}") from exc
+
+
+@router_protegido.get("/projecao/{ticker}")
+def projecao(
+    ticker: str,
+    taxa_desconto: float = Query(0.10, ge=0.0, le=0.30, description="Taxa de desconto para o Modelo de Gordon"),
+) -> dict:
+    """Projeção de rendimento e preço justo baseada em dados passados.
+
+    Calcula dividendos projetados para os próximos 12 meses, preço justo via
+    Modelo de Gordon Crescimento e indicador de "bom momento" para comprar.
+    Não depende da IA — é um cálculo local sobre os dados coletados.
+    """
+    try:
+        ctx = get_analista().contexto(ticker)
+        if not ctx.indicadores and not ctx.balanco:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Não foi possível obter dados de {ticker.upper()} para projeção.",
+            )
+        proj = projetar(ticker, ctx.as_dict(), taxa_desconto=taxa_desconto)
+        return json_seguro({
+            "ticker": proj.ticker,
+            "preco_atual": proj.preco_atual,
+            "dy_atual": proj.dy_atual,
+            "dividendos_12m": proj.dividendos_12m,
+            "preco_justo": proj.preco_justo,
+            "upside": proj.upside,
+            "bom_momento": proj.bom_momento,
+            "motivo": proj.motivo,
+            "cenarios": proj.cenarios,
+            "alertas": proj.alertas,
+            "texto": projetar.__doc__ and projecao_para_texto(proj),
+        })
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Falha na projeção: {exc}") from exc
 
 
 @router_protegido.post("/analise-lote")

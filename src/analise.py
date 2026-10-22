@@ -37,6 +37,8 @@ class ContextoEmpresa:
     tipo_papel: str | None = None
     setor: str | None = None
     subsetor: str | None = None
+    industria: str | None = None
+    segmento: str | None = None
     cotacao: float | None = None
     valor_mercado: float | None = None
     ultimo_balanco: str | None = None
@@ -59,6 +61,8 @@ class ContextoEmpresa:
             "tipo_papel": self.tipo_papel,
             "setor": self.setor,
             "subsetor": self.subsetor,
+            "industria": self.industria,
+            "segmento": self.segmento,
             "cotacao": self.cotacao,
             "valor_mercado": self.valor_mercado,
             "ultimo_balanco": self.ultimo_balanco,
@@ -239,6 +243,7 @@ class Analista:
             ctx.cotacao = ctx.cotacao or perfil_mercado.get("cotacao")
             ctx.valor_mercado = ctx.valor_mercado or perfil_mercado.get("valor_mercado")
             ctx.setor = ctx.setor or perfil_mercado.get("setor")
+            ctx.industria = perfil_mercado.get("industria") or ctx.industria
         except Exception as exc:  # noqa: BLE001
             log.warning("yfinance sem perfil para %s: %s", ticker, exc)
 
@@ -303,6 +308,8 @@ class Analista:
             tipo=ctx.tipo,
             setor=ctx.setor,
             subsetor=ctx.subsetor,
+            industria=ctx.industria,
+            segmento=ctx.segmento,
             indicadores=ctx.indicadores,
             balanco=ctx.balanco,
             dre_anual=ctx.dre_anual,

@@ -24,18 +24,16 @@ REGRAS INEGOCIÁVEIS:
 2. Sempre cite a origem e o período do número que estiver usando ("balanço de
    30/06/2026", "DRE últimos 12 meses", "cotação de 21/10/2026").
 3. Distinga o que é FATO (número do documento) do que é INTERPRETAÇÃO (sua leitura).
-   Use os campos "endividamento", "geracao_caixa" e "qualidade_lucros" para a leitura.
+   Use os campos "sobre_empresa", "endividamento", "geracao_caixa" e "qualidade_lucros".
 4. Se os dados forem insuficientes para concluir algo, diga isso no campo "alertas"
    e reduza a "nota" e a "confianca". Não preencha lacuna com suposição.
 5. Escreva em português do Brasil, com vocabulário técnico de mercado.
 6. Não emita recomendação de compra/venda. O veredito é uma leitura técnica
    (o usuário decide). Nunca prometa retorno.
 7. Fale da empresa pelo nome e ticker. Quando o ticker tiver sufixo de classe
-   (ex.: PETR4 = PN, PETR3 = ON), respeite a classe: dividendendos e Covenant do
+   (ex.: PETR4 = PN, PETR3 = ON), respeite a classe: dividendos e Covenant do
    passivo podem diferir entre elas.
-8. Tamanho: o campo "resumo" deve ter 2 a 3 parágrafos densos (sem enrolação).
-   "riscos" e "catalisadores": 3 a 5 itens curtos e específicos, com número quando
-   fizer sentido.
+8. Tamanho: o campo "sobre_empresa" deve explicar em 1 parágrafo claro o que a empresa faz e seu modelo de negócio. O "resumo" deve ter 2 a 3 parágrafos densos (sem enrolação). "riscos" e "catalisadores": 3 a 5 itens curtos e específicos.
 """
 
 PERFIS_ANALISE: dict[str, dict[str, str]] = {
@@ -150,6 +148,8 @@ def construir_prompt(
     tipo: str = "Ação",
     setor: str | None = None,
     subsetor: str | None = None,
+    industria: str | None = None,
+    segmento: str | None = None,
     nro_acoes: float | None = None,
     valor_firma: float | None = None,
     perfil_investidor: dict[str, Any] | None = None,
@@ -162,6 +162,10 @@ def construir_prompt(
     partes: list[str] = []
     partes.append(f"# Empresa: {nome or ticker} ({ticker})")
     partes.append(f"Tipo de papel: {tipo}" + (f" — {subsetor or setor}" if (setor or subsetor) else ""))
+    if industria:
+        partes.append(f"Indústria: {industria}")
+    if segmento:
+        partes.append(f"Segmento: {segmento}")
     partes.append(f"Perfil de análise: {cfg_perfil['rotulo']}")
 
     if eh_fii:
@@ -373,6 +377,10 @@ def schema_relatorio():
         type=types.Type.OBJECT,
         properties={
             "ticker": types.Schema(type=types.Type.STRING, description="Ticker analisado"),
+            "sobre_empresa": types.Schema(
+                type=types.Type.STRING,
+                description="1 parágrafo claro sobre o que a empresa faz, setor, indústria e modelo de negócio",
+            ),
             "resumo": types.Schema(
                 type=types.Type.STRING,
                 description="2 a 3 parágrafos densos com a leitura técnica dos números",
@@ -424,7 +432,7 @@ def schema_relatorio():
             ),
         },
         required=[
-            "ticker", "resumo", "nota", "confianca", "veredito",
+            "ticker", "sobre_empresa", "resumo", "nota", "confianca", "veredito",
             "endividamento", "geracao_caixa", "qualidade_lucros",
             "riscos", "catalisadores", "alertas", "o_que_monitorar",
         ],

@@ -999,6 +999,7 @@ function renderParecer(ticker, dados, compacto) {
   v.appendChild(vt);
   frag.appendChild(v);
 
+  if (r.sobre_empresa) frag.appendChild(secao("Sobre a empresa", r.sobre_empresa));
   if (r.resumo) frag.appendChild(secao("Resumo técnico", r.resumo));
 
   const col1 = el("div", "two-col");
