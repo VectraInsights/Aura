@@ -441,9 +441,18 @@ def diagnostico(request: Request) -> dict:
     import platform
     import sys
 
+    sha = os.getenv("VERCEL_GIT_COMMIT_SHA", "")
     return {
         "app": "Aura",
         "versao": VERSAO_APP,
+        "commit": sha[:7] if sha else "local",
+        "commit_completo": sha,
+        "commit_mensagem": os.getenv("VERCEL_GIT_COMMIT_MESSAGE", "")[:120],
+        "branch": os.getenv("VERCEL_GIT_COMMIT_REF", ""),
+        "ambiente": os.getenv("VERCEL_ENV", ""),
+        "projeto": os.getenv("VERCEL_PROJECT_NAME", ""),
+        "url_producao": os.getenv("VERCEL_PROJECT_PRODUCTION_URL", ""),
+        "deploy_id": os.getenv("VERCEL_DEPLOYMENT_ID", ""),
         "python": sys.version.split()[0],
         "plataforma": platform.system(),
         "em_venv": bool(os.getenv("VERCEL")),
@@ -463,10 +472,12 @@ def diagnostico(request: Request) -> dict:
 @router.get("/health")
 def health() -> dict:
     """Verifica a configuração e a disponibilidade da IA."""
+    sha = os.getenv("VERCEL_GIT_COMMIT_SHA", "")
     return {
         "status": "ok",
         "app": "Aura",
         "versao": VERSAO_APP,
+        "commit": sha[:7] if sha else "local",
         "ia_configurada": CONFIG.tem_chave_ia,
         "modelo_padrao": CONFIG.gemini_model,
         "modelos_fallback": CONFIG.gemini_fallbacks,
