@@ -16,6 +16,9 @@ from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
 
+#: Versão do cache de variações. Sobe quando o formato de parsing mudar.
+VERSAO_CACHE = "v1"
+
 #: Apelidos -> símbolo do yfinance.
 APELIDOS: dict[str, str] = {
     "dolar": "USDBRL=X",
