@@ -261,13 +261,17 @@ class Motor:
 
     def avaliar_sugestoes(
         self,
-        tickers: list[str],
+        tickers: list[str] | None = None,
         taxa_desconto: float = 0.10,
         notificar: bool = True,
         limiar_upside: float = 15.0,
         limiar_downside: float = -15.0,
+        auto: bool = False,
     ) -> dict[str, Any]:
         """Avalia sugestões de operação para uma lista de tickers.
+
+        Se auto=True, descobre os tickers automaticamente a partir da triagem
+        (perfil qualidade) e do radar, sem precisar informar um por um.
 
         Compara a sugestão atual com a última registrada. Envia alerta por email
         (e outros canais configurados) quando:
@@ -276,6 +280,18 @@ class Motor:
           * O downside chega ao limiar (preço bem acima do justo)
         """
         from ..analise import get_analista
+
+        if auto:
+            tickers = self._descobrir_tickers_auto()
+
+        if not tickers:
+            return {
+                "verificado_em": datetime.now().isoformat(timespec="seconds"),
+                "avaliados": 0,
+                "enviadas": [],
+                "sugestoes": {},
+                "mensagem": "Nenhum ticker para avaliar.",
+            }
 
         agora = datetime.now().isoformat(timespec="seconds")
         anterior = self._carregar_sugestoes()
@@ -348,3 +364,68 @@ class Motor:
             "enviadas": enviadas,
             "sugestoes": {k: v for k, v in novas.items()},
         }
+
+    def _descobrir_tickers_auto(self) -> list[str]:
+        """Descobre tickers automaticamente a partir da triagem e radar.
+
+        União dos tickers que aparecem nas triagens de qualidade, valor e
+        dividendário, limitados aos 30 primeiros de cada um para não sobrecarregar.
+        """
+        from ..analise import get_analista
+        from ..screen import PERFIS_TELA
+
+        analista = get_analista()
+        descobertos: set[str] = set()
+
+        for chave in ["qualidade", "valor", "dividendario"]:
+            if chave not in PERFIS_TELA:
+                continue
+            try:
+                dados = analista.varredura(
+                    perfil_chave=chave, limite=30, incluir_fiis=False
+                )
+                for r in dados.get("resultados", []) or []:
+                    t = r.get("ticker")
+                    if t:
+                        descobertos.add(t)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Não foi descobrir tickers do perfil %s: %s", chave, exc)
+
+        descobertos.update(self.carregar_tickers_radar())
+
+        return sorted(descobertos)
+
+    # -------------------------------------------------- tickers do radar
+    def _caminho_tickers_radar(self) -> Path:
+        from ..config import CONFIG
+
+        return CONFIG.dados_dir / "tickers_radar.json"
+
+    def carregar_tickers_radar(self) -> list[str]:
+        """Carrega tickers salvos pelo radar para monitoramento."""
+        caminho = self._caminho_tickers_radar()
+        if not caminho.exists():
+            return []
+        try:
+            dados = json.loads(caminho.read_text(encoding="utf-8"))
+            return dados.get("tickers", [])
+        except (json.JSONDecodeError, OSError):
+            return []
+
+    def salvar_tickers_radar(self, tickers: list[str]) -> None:
+        """Salva tickers recomendados pelo radar para monitoramento."""
+        caminho = self._caminho_tickers_radar()
+        try:
+            caminho.parent.mkdir(parents=True, exist_ok=True)
+            caminho.write_text(
+                json.dumps({"tickers": sorted(set(tickers))}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            log.warning("Não foi possível salvar tickers do radar: %s", exc)
+
+    def adicionar_tickers_radar(self, tickers: list[str]) -> None:
+        """Adiciona tickers do radar à lista de monitoramento (não substitui)."""
+        existentes = self.carregar_tickers_radar()
+        novos = list(set(existentes + tickers))
+        self.salvar_tickers_radar(novos)

@@ -528,6 +528,13 @@ async def radar(
                 "fonte": cot.fonte,
             }
 
+    #: Salva os tickers recomendados pelo radar para o monitor acompanhar automaticamente.
+    tickers_radar = [c.ticker for classe, itens in grupos.items() for c in itens]
+    if tickers_radar:
+        from src.monitor import Motor
+
+        Motor().adicionar_tickers_radar(tickers_radar)
+
     return {
         "radar": json_seguro(resultado.dados or {}),
         "candidatos": {
