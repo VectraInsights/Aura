@@ -456,6 +456,8 @@ async def radar(
         schema_radar,
     )
 
+    from src.monitor.precos import cotacao
+
     try:
         candidatos = montar_candidatos(
             get_analista(),
@@ -483,9 +485,28 @@ async def radar(
         raise HTTPException(status_code=500, detail=f"Falha ao gerar o radar: {exc}") from exc
 
     grupos = classificar_por_classe(candidatos)
+
+    #: Preço atual e variação de cada candidato, para mostrar ao lado da recomendação da IA.
+    precos_candidatos: dict[str, dict[str, Any]] = {}
+    for classe, itens in grupos.items():
+        for c in itens:
+            cot = cotacao(c.ticker)
+            precos_candidatos[c.ticker] = {
+                "preco": cot.preco,
+                "variacao_dia": cot.variacao_dia,
+                "fonte": cot.fonte,
+            }
+
     return {
         "radar": json_seguro(resultado.dados or {}),
-        "candidatos": {classe: [c.ticker for c in itens] for classe, itens in grupos.items()},
+        "candidatos": {
+            classe: [
+                {"ticker": c.ticker, "preco": c.preco, **precos_candidatos.get(c.ticker, {})}
+                for c in itens
+            ]
+            for classe, itens in grupos.items()
+        },
+        "precos": precos_candidatos,
         "criterios": CRITERIOS_POR_CLASSE,
         "limites": LIMITES_DO_RADAR,
         "meta": {

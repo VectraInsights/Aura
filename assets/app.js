@@ -241,9 +241,53 @@ function renderRadar(dados) {
         topo.appendChild(el("span", "radar-nota", `${d.nota}/10`));
       }
       conteudo.appendChild(topo);
+
+      // Preço atual e variação do dia
+      const precos = dados.precos || {};
+      const cot = precos[d.ticker] || {};
+      if (cot.preco != null) {
+        const v = cot.variacao_dia != null ? cot.variacao_dia : 0;
+        const cls = v >= 0 ? "pos" : "neg";
+        const sinal = v >= 0 ? "+" : "";
+        const precoEl = el("div", "radar-preco", `R$ ${cot.preco.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+        const varEl = el("div", `radar-variacao ${cls}`, `${sinal}${v.toFixed(2)}%`);
+        const linha = el("div", "radar-linha-preco");
+        linha.appendChild(precoEl);
+        linha.appendChild(varEl);
+        conteudo.appendChild(linha);
+      }
+
       if (d.veredito) conteudo.appendChild(el("div", "radar-veredito", d.veredito));
       if (d.motivo) conteudo.appendChild(el("div", "radar-motivo", d.motivo));
       if (d.cuidados) conteudo.appendChild(el("div", "radar-cuidado", `⚠ ${d.cuidados}`));
+      item.appendChild(conteudo);
+      bloco.appendChild(item);
+    });
+
+    (grupo.evitar || []).forEach((ev) => {
+      const item = el("div", "radar-item radar-evitar");
+      item.appendChild(el("div", "radar-pos", "✕"));
+      const conteudo = el("div", "radar-corpo");
+      const topo = el("div", "radar-topo");
+      topo.appendChild(el("span", "radar-ticker", ev.ticker));
+      conteudo.appendChild(topo);
+
+      // Preço atual e variação do dia (também para os evitados)
+      const precos = dados.precos || {};
+      const cot = precos[ev.ticker] || {};
+      if (cot.preco != null) {
+        const v = cot.variacao_dia != null ? cot.variacao_dia : 0;
+        const cls = v >= 0 ? "pos" : "neg";
+        const sinal = v >= 0 ? "+" : "";
+        const precoEl = el("div", "radar-preco", `R$ ${cot.preco.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+        const varEl = el("div", `radar-variacao ${cls}`, `${sinal}${v.toFixed(2)}%`);
+        const linha = el("div", "radar-linha-preco");
+        linha.appendChild(precoEl);
+        linha.appendChild(varEl);
+        conteudo.appendChild(linha);
+      }
+
+      if (ev.motivo) conteudo.appendChild(el("div", "radar-motivo", ev.motivo));
       item.appendChild(conteudo);
       bloco.appendChild(item);
     });
