@@ -1,8 +1,9 @@
-"""Notificações do monitor: Telegram, webhook genérico e log local.
+"""Notificações do monitor: Telegram, WhatsApp, email e webhook.
 
 Sem configuração, tudo é registrado no histórico. Com TELEGRAM_BOT_TOKEN e
 TELEGRAM_CHAT_ID, o alerta também chega no Telegram. Com WEBHOOK_URL, ele
-vai para qualquer endpoint (n8n, Make, Discord, Slack...).
+vai para qualquer endpoint (n8n, Make, Discord, Slack...). Com GMAIL_USER e
+GMAIL_APP_PASSWORD, o alerta também chega por email via Gmail SMTP.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ class Notificador:
     Canais (todos opcionais e independentes):
       * Telegram    — TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID
       * WhatsApp   — três modos, ver _whatsapp()
+      * Email       — GMAIL_USER + GMAIL_APP_PASSWORD + EMAIL_DESTINO (SMTP Gmail)
       * Webhook     — WEBHOOK_URL (n8n, Make, Discord, Slack, qualquer HTTP)
     """
 
@@ -39,6 +41,11 @@ class Notificador:
     whatsapp_template: str = field(default_factory=lambda: os.getenv("WHATSAPP_TEMPLATE", "aura_alerta").strip())
     whatsapp_destino: str = field(default_factory=lambda: os.getenv("WHATSAPP_DESTINO", "").strip())
 
+    # Email — Gmail SMTP (necessita senha de app, não a senha normal da conta)
+    gmail_user: str = field(default_factory=lambda: os.getenv("GMAIL_USER", "").strip())
+    gmail_app_password: str = field(default_factory=lambda: os.getenv("GMAIL_APP_PASSWORD", "").strip())
+    email_destino: str = field(default_factory=lambda: os.getenv("EMAIL_DESTINO", "").strip())
+
     def enviar(self, titulo: str, texto: str, dados: dict[str, Any] | None = None) -> list[str]:
         """Dispara o alerta. Devolve a lista de canais que responderam."""
         canais: list[str] = []
@@ -50,6 +57,10 @@ class Notificador:
         if self._whatsapp_disponivel():
             if self._whatsapp(titulo, texto):
                 canais.append("whatsapp")
+
+        if self._email_disponivel():
+            if self._email(titulo, texto):
+                canais.append("email")
 
         if self.webhook_url:
             if self._webhook(titulo, texto, dados or {}):
@@ -71,6 +82,36 @@ class Notificador:
         if self.whatsapp_token and self.whatsapp_phone_id:
             return self._whatsapp_cloud(titulo, texto)
         return False
+
+    # ------------------------------------------------------------------ email
+    def _email_disponivel(self) -> bool:
+        return bool(self.gmail_user and self.gmail_app_password and self.email_destino)
+
+    def _email(self, titulo: str, texto: str) -> bool:
+        """Envia email via SMTP do Gmail.
+
+        Exige GMAIL_USER (endereço completo) e GMAIL_APP_PASSWORD (senha de app
+        gerada na conta Google, não a senha normal de login).
+        """
+        try:
+            import smtplib
+            from email.message import EmailMessage
+
+            msg = EmailMessage()
+            msg["From"] = self.gmail_user
+            msg["To"] = self.email_destino
+            msg["Subject"] = f"Aura — {titulo}"
+            msg.set_content(texto)
+
+            with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as servidor:
+                servidor.starttls()
+                servidor.login(self.gmail_user, self.gmail_app_password)
+                servidor.send_message(msg)
+
+            return True
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Falha ao enviar email: %s", exc)
+            return False
 
     def _whatsapp_callmebot(self, texto: str) -> bool:
         """CallMeBot: gratuito. Exige enviar /start para o bot uma única vez.

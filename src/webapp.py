@@ -47,7 +47,7 @@ from src.ia import PERFIS_ANALISE  # noqa: E402
 from src.ia.gemini import ErroIA  # noqa: E402
 from src.perfil import QUESTOES, perfil_completo, resumo_para_ia  # noqa: E402
 from src.screen import PERFIS_TELA  # noqa: E402
-from src.projecao import projetar  # noqa: E402
+from src.projecao import projetar, sugerir_operacao  # noqa: E402
 
 app = FastAPI(
     title="Aura",
@@ -385,6 +385,7 @@ def canais_monitor() -> dict:
         "telegram": bool(n.telegram_token and n.telegram_chat_id),
         "whatsapp_callmebot": bool(n.callmebot_phone and n.callmebot_apikey),
         "whatsapp_cloud": bool(n.whatsapp_token and n.whatsapp_phone_id),
+        "email": bool(n.gmail_user and n.gmail_app_password and n.email_destino),
         "webhook": bool(n.webhook_url),
         "historico_local": True,
     }
@@ -673,6 +674,60 @@ def projecao(
         raise
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Falha na projeção: {exc}") from exc
+
+
+@router_protegido.post("/sugerir/{ticker}/enviar")
+def sugerir_enviar(
+    ticker: str,
+    request: Request,
+    taxa_desconto: float = Query(0.10, ge=0.0, le=0.30, description="Taxa de desconto para o Modelo de Gordon"),
+) -> dict:
+    """Gera a sugestão de operação (Compra/Venda/Manter) e envia por email.
+
+    Calcula a sugestão baseada em fatos numéricos (preço, DY, upside,
+    endividamento, ROE, ROIC, crescimento, margem EBIT, momentum, liquidez)
+    e dispara a mensagem pelos canais configurados (email via Gmail SMTP,
+    Telegram, WhatsApp, webhook).
+    """
+    from src.monitor import Motor, Notificador
+
+    try:
+        ctx = get_analista().contexto(ticker)
+        if not ctx.indicadores and not ctx.balanco:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Não foi possível obter dados de {ticker.upper()} para sugestão.",
+            )
+
+        res = sugerir_operacao(ticker, ctx.as_dict(), taxa_desconto=taxa_desconto)
+        proj = projetar(ticker, ctx.as_dict(), taxa_desconto=taxa_desconto)
+
+        # Envia pelos canais configurados
+        notificador = Notificador()
+        canais = notificador.enviar(
+            titulo=f"Sugestão {res.sugestao.value} — {ticker}",
+            texto=res.texto_whatsapp,
+        )
+
+        return json_seguro({
+            "ticker": res.ticker,
+            "sugestao": res.sugestao.value,
+            "confianca": res.confianca,
+            "score": res.score,
+            "preco_atual": proj.preco_atual,
+            "preco_justo": proj.preco_justo,
+            "upside": proj.upside,
+            "dy_atual": proj.dy_atual,
+            "fatos_compra": res.fatos_compra,
+            "fatos_venda": res.fatos_venda,
+            "fatos_neutro": res.fatos_neutro,
+            "texto": res.texto_whatsapp,
+            "canais_enviados": canais,
+        })
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Falha ao sugerir: {exc}") from exc
 
 
 @router_protegido.post("/analise-lote")
