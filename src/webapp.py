@@ -111,6 +111,9 @@ async def normaliza_caminho(request: Request, call_next):
         params = parse_qs(consulta.decode("utf-8", errors="replace"))
         rota = (params.get("rota") or [""])[0]
         if rota:
+            # A rota vem na query string; se o cliente mandou algo como
+            # "/triagem?x=1", o que vier depois do '?' nao faz parte do caminho.
+            rota = rota.split("?", 1)[0]
             rota = rota if rota.startswith("/") else "/" + rota
             novo = "/api" + rota if not rota.startswith("/api") else rota
             if novo != caminho:
