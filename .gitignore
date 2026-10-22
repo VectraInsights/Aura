@@ -7,3 +7,8 @@ venv/
 data/
 relatorios/
 .streamlit/secrets.toml
+
+# Documentacao gerada (PDF, JSON e a fonte do PDF): fica na maquina, nao no
+# repositorio. Regerar com chrome --headless --print-to-pdf e o script
+# que gera o JSON (ver README).
+docs/
