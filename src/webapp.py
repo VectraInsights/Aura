@@ -48,7 +48,13 @@ from src.ia.gemini import ErroIA  # noqa: E402
 from src.perfil import QUESTOES, perfil_completo, resumo_para_ia  # noqa: E402
 from src.screen import PERFIS_TELA  # noqa: E402
 from src.projecao import projetar, sugerir_operacao  # noqa: E402
-from src.daytrade.monitor import MonitorDayTrade  # noqa: E402
+from src.daytrade import (  # noqa: E402
+    MonitorDayTrade,
+    gerar_radar_daytrade_ia,
+    analisar_ativo_daytrade_ia,
+    avaliar_posicao_aberta_ia,
+    coletar_metricas_lote,
+)
 
 app = FastAPI(
     title="Aura",
@@ -216,6 +222,8 @@ def _exiguir_ia() -> None:
             status_code=503,
             detail="GEMINI_API_KEY não configurada no ambiente da aplicação.",
         )
+
+_exigir_ia = _exiguir_ia
 
 
 @router.get("/sessao")
@@ -781,6 +789,69 @@ def daytrade_avaliar(notificar: bool = Query(True, description="Enviar notifica�
     """Avalia preços atuais das operações de day trade e gera sinais de venda."""
     monitor = MonitorDayTrade()
     return monitor.avaliar(notificar=notificar)
+
+
+@router_protegido.get("/daytrade/scanner")
+def daytrade_scanner() -> dict:
+    """Escaneia o mercado intraday e devolve métricas técnicas dos ativos mais líquidos."""
+    metricas = coletar_metricas_lote()
+    return json_seguro({
+        "total": len(metricas),
+        "ativos": [m.as_dict() for m in metricas],
+    })
+
+
+@router_protegido.post("/daytrade/radar")
+def daytrade_radar() -> dict:
+    """Gera com a IA recomendações de COMPRA e VENDA para Day Trade no pregão de hoje."""
+    _exiguir_ia()
+    try:
+        resultado = gerar_radar_daytrade_ia(get_analista().cliente_ia)
+        return json_seguro(resultado)
+    except ErroIA as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Falha ao gerar radar de day trade: {exc}") from exc
+
+
+@router_protegido.post("/daytrade/analisar")
+def daytrade_analisar_ativo(payload: dict) -> dict:
+    """Analisa um ativo específico para Day Trade com a IA."""
+    _exiguir_ia()
+    ticker = str(payload.get("ticker", "")).strip().upper()
+    if not ticker:
+        raise HTTPException(status_code=400, detail="Informe o ticker para análise.")
+    try:
+        resultado = analisar_ativo_daytrade_ia(ticker, get_analista().cliente_ia)
+        return json_seguro(resultado)
+    except ErroIA as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Falha ao analisar {ticker}: {exc}") from exc
+
+
+@router_protegido.post("/daytrade/operacoes/{ticker}/avaliar-ia")
+def daytrade_avaliar_operacao_ia(ticker: str) -> dict:
+    """Pede à IA uma avaliação tática sobre uma operação aberta (manter, realizar ou stop)."""
+    _exiguir_ia()
+    monitor = MonitorDayTrade()
+    t_clean = ticker.strip().upper()
+    op = monitor.operacoes.get(t_clean)
+    if not op or op.status != "aberta":
+        raise HTTPException(status_code=404, detail="Operação aberta não encontrada para este ticker.")
+
+    try:
+        resultado = avaliar_posicao_aberta_ia(
+            ticker=op.ticker,
+            preco_compra=op.preco_compra,
+            cliente_ia=get_analista().cliente_ia,
+            preco_venda_meta=op.preco_venda_meta,
+        )
+        return json_seguro(resultado)
+    except ErroIA as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Falha ao avaliar operação {ticker}: {exc}") from exc
 
 
 @router_protegido.post("/sugerir/{ticker}/enviar")

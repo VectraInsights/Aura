@@ -14,7 +14,7 @@
   <div class="brand">
     <span class="brand-mark">◈</span>
     <div>
-      <h1>Aura <span class="versao" id="versao-app">v1.0.4</span></h1>
+      <h1>Aura <span class="versao" id="versao-app">v1.0.5</span></h1>
       <p>IA de análise de investimentos · B3</p>
     </div>
   </div>
@@ -143,37 +143,92 @@
 
     <!-- ============ ABA: DAY TRADE ============ -->
     <div class="aba-painel" id="aba-daytrade" hidden>
-      <div class="daytrade-card">
-        <h2>Day Trade</h2>
-        <p class="hint">Acompanhe preços intraday e receba aviso quando atingir a meta de venda. Posições fecham no mesmo dia.</p>
 
-        <form id="daytrade-form" class="daytrade-form">
-          <div class="regra-linha">
-            <input type="text" id="dt-ativo" placeholder="PETR4, VALE3, ITUB4…" required>
+      <!-- RADAR DAY TRADE COM IA -->
+      <div class="daytrade-hero-card">
+        <div class="dt-hero-header">
+          <div>
+            <div class="dt-badge-ia">✨ Inteligência Artificial Intraday</div>
+            <h2>Radar Day Trade · Oportunidades do Pregão</h2>
+            <p class="hint">A IA varre os papéis mais líquidos da B3 (VWAP, IFR 5m, amplitude, range e médias rápidas) e gera recomendações de <strong>COMPRA</strong> e <strong>VENDA</strong> com entrada, alvo de lucro (gain) e stop loss calculados.</p>
           </div>
-          <div class="regra-linha">
-            <input type="number" id="dt-preco-compra" step="any" placeholder="Preço de compra (R$)" required>
+          <div class="dt-hero-actions">
+            <button class="btn primary btn-radar-dt" id="btn-dt-radar-ia" type="button">
+              <span class="btn-icone">⚡</span> Escanear Mercado com IA
+            </button>
           </div>
-          <div class="regra-linha">
-            <select id="dt-variacao">
-              <option value="1.0">+1,0% de lucro</option>
-              <option value="2.0">+2,0% de lucro</option>
-              <option value="3.0">+3,0% de lucro</option>
-              <option value="5.0">+5,0% de lucro</option>
-              <option value="10.0">+10,0% de lucro</option>
-            </select>
-            <input type="number" id="dt-meta-venda" step="any" placeholder="Ou preço de venda fixo (R$)">
-          </div>
-          <button class="btn primary" type="submit">Adicionar operação</button>
-        </form>
+        </div>
 
-        <div class="daytrade-lista" id="daytrade-lista"></div>
+        <div id="dt-radar-status" class="dt-status-box" hidden>
+          <div class="spinner"></div>
+          <span id="dt-radar-status-msg">Coletando dados intraday e processando setups com a IA...</span>
+        </div>
 
-        <div class="daytrade-rodape">
-          <button class="btn small" id="btn-dt-avaliar" type="button">Verificar agora</button>
-          <span class="hint" id="dt-info"></span>
+        <div id="dt-radar-resultado" hidden>
+          <div class="dt-mercado-resumo" id="dt-mercado-resumo"></div>
+          
+          <h3 class="dt-secao-titulo">🎯 Oportunidades Recomendadas</h3>
+          <div class="dt-oportunidades-grid" id="dt-oportunidades-grid"></div>
+
+          <div class="dt-evitar-container" id="dt-evitar-container" hidden>
+            <h4 class="dt-evitar-titulo">⚠️ Ativos a Evitar no Pregão de Hoje</h4>
+            <div class="dt-evitar-lista" id="dt-evitar-lista"></div>
+          </div>
         </div>
       </div>
+
+      <!-- SEGUNDA LINHA: ANÁLISE INDIVIDUAL + CONTROLE DE OPERAÇÕES -->
+      <div class="dt-grid-dupla">
+        
+        <!-- CONSULTA INDIVIDUAL POR ATIVO -->
+        <div class="daytrade-card">
+          <div class="dt-card-header">
+            <h3>🔍 Análise Específica de Ativo</h3>
+          </div>
+          <p class="hint">Digite qualquer papel da B3 para a IA avaliar o timing e os pontos de trade para hoje.</p>
+          <form id="dt-analisar-form" class="dt-analisar-form">
+            <input type="text" id="dt-analisar-ticker" placeholder="Ex: PETR4, PRIO3, VALE3..." required>
+            <button class="btn" type="submit" id="btn-dt-analisar-ticker">Analisar com IA</button>
+          </form>
+          <div id="dt-analise-individual-status" class="dt-status-box" hidden>
+            <div class="spinner"></div>
+            <span>Calculando indicadores técnicos e gerando parecer...</span>
+          </div>
+          <div id="dt-analise-individual-box" class="dt-analise-individual-box" hidden></div>
+        </div>
+
+        <!-- MINHAS OPERAÇÕES MONITORADAS -->
+        <div class="daytrade-card">
+          <div class="dt-card-header">
+            <div>
+              <h3>📋 Minhas Posições no Dia</h3>
+              <p class="hint">Acompanhe seus trades abertos com alertas e parecer tático da IA.</p>
+            </div>
+            <button class="btn small" id="btn-dt-avaliar" type="button">Verificar Preços</button>
+          </div>
+
+          <form id="daytrade-form" class="daytrade-form-inline">
+            <input type="text" id="dt-ativo" placeholder="Ticker (PETR4)" required>
+            <input type="number" id="dt-preco-compra" step="any" placeholder="Preço Compra (R$)" required>
+            <select id="dt-variacao">
+              <option value="1.0">+1,0% meta</option>
+              <option value="1.5">+1,5% meta</option>
+              <option value="2.0" selected>+2,0% meta</option>
+              <option value="3.0">+3,0% meta</option>
+              <option value="5.0">+5,0% meta</option>
+            </select>
+            <input type="number" id="dt-meta-venda" step="any" placeholder="Ou Alvo R$">
+            <button class="btn primary small" type="submit">+ Adicionar</button>
+          </form>
+
+          <div class="daytrade-lista" id="daytrade-lista"></div>
+          <div class="daytrade-rodape">
+            <span class="hint" id="dt-info"></span>
+          </div>
+        </div>
+
+      </div>
+
     </div>
 
     <!-- ============ ABA: INVESTIMENTOS ============ -->

@@ -1,10 +1,35 @@
-"""Day Trade — monitoramento de curto prazo para operações intraday.
+"""Day Trade — monitoramento e análise com Inteligência Artificial para operações intraday.
 
-Área separada dos investimentos de longo prazo. Foco em:
-  * Variação de preço intraday (compra e venda no mesmo dia)
-  * Ativos de alta liquidez (PETR4, VALE3, ITUB4, WIN, WDO)
-  * Alertas de venda quando o preço sobe acima da meta
-  * Registro de operações do dia (não executa ordens em corretora)
+Recursos:
+  * Radar de Oportunidades com IA (Scanner em tempo real de ativos líquidos da B3)
+  * Sugestões automáticas de COMPRA e VENDA intraday com Preço de Entrada, Alvo e Stop Loss
+  * Análise sob demanda de qualquer ativo pelo modelo Gemini
+  * Avaliação tática com IA de posições abertas
+  * Registro e monitoramento de operações com alertas
 
-Não é recomendação de investimento. Ferramenta de estudo.
+Não é recomendação de investimento. Ferramenta analítica e educacional.
 """
+
+from .analisador import (
+    TICKERS_DAYTRADE_PADRAO,
+    MetricasIntraday,
+    analisar_ativo_daytrade_ia,
+    avaliar_posicao_aberta_ia,
+    calcular_metricas_intraday,
+    coletar_metricas_lote,
+    gerar_radar_daytrade_ia,
+)
+from .monitor import MonitorDayTrade, OperacaoDayTrade, SinalDayTrade
+
+__all__ = [
+    "MonitorDayTrade",
+    "OperacaoDayTrade",
+    "SinalDayTrade",
+    "MetricasIntraday",
+    "TICKERS_DAYTRADE_PADRAO",
+    "calcular_metricas_intraday",
+    "coletar_metricas_lote",
+    "gerar_radar_daytrade_ia",
+    "analisar_ativo_daytrade_ia",
+    "avaliar_posicao_aberta_ia",
+]

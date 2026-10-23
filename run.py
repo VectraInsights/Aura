@@ -399,6 +399,83 @@ def cmd_verificar(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_daytrade(args: argparse.Namespace) -> int:
+    """Radar de Day Trade com IA e análise técnica intraday."""
+    from src.analise import Analista
+    from src.daytrade import (
+        analisar_ativo_daytrade_ia,
+        coletar_metricas_lote,
+        gerar_radar_daytrade_ia,
+    )
+
+    analista = Analista()
+    cliente_ia = analista.cliente_ia
+
+    # 1. Scanner de métricas numéricas puras
+    if getattr(args, "scanner", False):
+        print("Coletando métricas intraday (5m) dos papéis mais líquidos...")
+        metricas = coletar_metricas_lote()
+        if args.json:
+            print(json.dumps([m.as_dict() for m in metricas], ensure_ascii=False, indent=2))
+            return 0
+        print(f"\n{'TICKER':8s} {'PREÇO':8s} {'VAR DIA':9s} {'VWAP':8s} {'DIST VWAP':11s} {'IFR(14)':8s} {'TENDÊNCIA'}")
+        print("-" * 72)
+        for m in metricas:
+            print(
+                f"{m.ticker:8s} R${m.preco_atual:6.2f} {m.variacao_dia_pct:+6.2f}%   "
+                f"R${m.vwap:6.2f} {m.distancia_vwap_pct:+7.2f}%   {m.rsi_14:5.1f}   {m.tendencia}"
+            )
+        print()
+        return 0
+
+    # 2. Análise de um ticker específico
+    if getattr(args, "ticker", None):
+        tk = args.ticker.strip().upper()
+        print(f"Analisando {tk} para Day Trade com o modelo {cliente_ia.modelo}...")
+        res = analisar_ativo_daytrade_ia(tk, cliente_ia)
+        if args.json:
+            print(json.dumps(res, ensure_ascii=False, indent=2))
+            return 0
+        cor = "\033[32m" if res.get("veredito") == "COMPRAR" else ("\033[31m" if res.get("veredito") == "VENDER" else "\033[33m")
+        reset = "\033[0m"
+        print(f"\nAtivo: {res.get('ticker')} | Veredito: {cor}{res.get('veredito')}{reset} (Score: {res.get('score_oportunidade', 5)}/10)")
+        if res.get("estrategia"):
+            print(f"Estratégia: {res.get('estrategia')}")
+        print(f"Preço Entrada: R$ {res.get('preco_entrada', 0):.2f}")
+        print(f"Alvo Lucro:    R$ {res.get('alvo_lucro', 0):.2f}")
+        print(f"Stop Loss:     R$ {res.get('stop_loss', 0):.2f}")
+        print(f"Risco:Retorno: {res.get('risco_retorno', 'n/d')}")
+        print(f"\nRacional Técnico:\n  {res.get('racional_tecnico')}")
+        print(f"\nGatilho de Confirmação:\n  {res.get('gatilho_confirmacao')}\n")
+        return 0
+
+    # 3. Radar de Day Trade com IA (padrão)
+    print(f"Escaneando mercado e gerando radar de Day Trade com o modelo {cliente_ia.modelo}...")
+    res = gerar_radar_daytrade_ia(cliente_ia)
+    if args.json:
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+        return 0
+
+    print(f"\n\033[1mVisão do Mercado no Pregão:\033[0m\n  {res.get('resumo_mercado')}\n")
+    print("\033[1mOportunidades de Day Trade Sugeridas:\033[0m")
+    for op in res.get("oportunidades", []):
+        cor = "\033[32m" if op.get("tipo") == "COMPRA" else "\033[31m"
+        reset = "\033[0m"
+        alvo_pct = f"+{op.get('alvo_lucro_pct', 0):.1f}%"
+        stop_pct = f"-{abs(op.get('stop_loss_pct', 0)):.1f}%"
+        print(f"\n  [{cor}{op.get('tipo')}{reset}] \033[1m{op.get('ticker')}\033[0m — {op.get('estrategia')} ({op.get('forca_sinal', 'Média')})")
+        print(f"    Entrada: R$ {op.get('preco_entrada', 0):.2f} | Alvo: R$ {op.get('alvo_lucro', 0):.2f} ({alvo_pct}) | Stop: R$ {op.get('stop_loss', 0):.2f} ({stop_pct}) | R:R {op.get('risco_retorno')}")
+        print(f"    Motivo: {op.get('motivo_tecnico')}")
+
+    evitar = res.get("evitar", [])
+    if evitar:
+        print("\n\033[33m\033[1mAtivos a Evitar Hoje:\033[0m")
+        for ev in evitar:
+            print(f"  * \033[1m{ev.get('ticker')}\033[0m: {ev.get('motivo')}")
+    print()
+    return 0
+
+
 def cmd_senha(args: argparse.Namespace) -> int:
     """Gera a senha de acesso e o segredo de assinatura do cookie.
 
@@ -487,6 +564,12 @@ def main() -> int:
     p.add_argument("--limiar-upside", type=float, default=15.0, help="Limiar de upside para notificar compra")
     p.add_argument("--limiar-downside", type=float, default=-15.0, help="Limiar de downside para notificar venda")
     p.set_defaults(func=cmd_sugestoes)
+
+    p = sub.add_parser("daytrade", help="Radar de Day Trade com IA e análise técnica intraday")
+    p.add_argument("ticker", nargs="?", default=None, help="Ticker para analisar individualmente")
+    p.add_argument("--radar", action="store_true", help="Gera o radar completo de oportunidades com IA")
+    p.add_argument("--scanner", action="store_true", help="Exibe métricas técnicas dos ativos líquidos")
+    p.set_defaults(func=cmd_daytrade)
 
     p = sub.add_parser("regras", help="Lista as regras de monitoramento")
     p.set_defaults(func=cmd_regras)

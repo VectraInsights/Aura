@@ -1082,32 +1082,320 @@ function renderDayTrade(operacoes) {
   const lista = $("daytrade-lista");
   lista.innerHTML = "";
   if (!operacoes.length) {
-    lista.appendChild(el("div", "hint", "Nenhuma operação de day trade ainda."));
+    lista.appendChild(el("div", "hint", "Nenhuma operação de day trade cadastrada. Adicione acima ou use o Radar da IA."));
     return;
   }
   operacoes.forEach((op) => {
     const item = el("div", "daytrade-item");
-    const esquerda = el("div");
-    esquerda.appendChild(el("div", null, op.ticker));
-    esquerda.appendChild(el("div", "hint", `Compra: R$ ${op.preco_compra?.toFixed(2) ?? "—"}`));
+    const info = el("div", "dt-item-info");
+    
+    const topo = el("div", "dt-item-ticker", op.ticker);
+    info.appendChild(topo);
+
+    const sub = el("div", "dt-item-sub");
+    let textoSub = `Compra: R$ ${op.preco_compra ? op.preco_compra.toFixed(2) : "—"}`;
     if (op.preco_venda_meta) {
-      esquerda.appendChild(el("div", "hint", `Meta: R$ ${op.preco_venda_meta.toFixed(2)}`));
+      textoSub += ` · Alvo: R$ ${op.preco_venda_meta.toFixed(2)}`;
+    } else if (op.variacao_venda_pct) {
+      textoSub += ` · Meta: +${op.variacao_venda_pct.toFixed(1)}%`;
     }
-    const sinal = el("div", "daytrade-sinal", op.status === "aberta" ? "aberta" : "fechada");
+    sub.textContent = textoSub;
+    info.appendChild(sub);
+
+    const containerConselho = el("div", "dt-conselho-box-container");
+    containerConselho.id = `dt-conselho-${op.ticker}`;
+    containerConselho.hidden = true;
+    info.appendChild(containerConselho);
+
+    const acoes = el("div", "dt-item-acoes");
+    const sinal = el("span", "daytrade-sinal", op.status === "aberta" ? "Aberta" : "Fechada");
     sinal.classList.add(op.status === "aberta" ? "alta" : "venha");
-    item.appendChild(esquerda);
-    item.appendChild(sinal);
+    acoes.appendChild(sinal);
+
+    if (op.status === "aberta") {
+      const btnIa = el("button", "btn small", "💡 Conselho IA");
+      btnIa.type = "button";
+      btnIa.style.fontSize = "11px";
+      btnIa.style.padding = "3px 8px";
+      btnIa.addEventListener("click", () => pedirConselhoIa(op.ticker, btnIa));
+      acoes.appendChild(btnIa);
+    }
+
+    const btnRemover = el("button", "btn small", "✕");
+    btnRemover.type = "button";
+    btnRemover.style.fontSize = "11px";
+    btnRemover.style.padding = "3px 6px";
+    btnRemover.style.color = "var(--neg)";
+    btnRemover.title = "Remover operação";
+    btnRemover.addEventListener("click", () => removerDayTrade(op.ticker));
+    acoes.appendChild(btnRemover);
+
+    item.appendChild(info);
+    item.appendChild(acoes);
     lista.appendChild(item);
   });
 }
 
+async function pedirConselhoIa(ticker, btn) {
+  const container = $(`dt-conselho-${ticker}`);
+  if (!container) return;
+  btn.disabled = true;
+  btn.textContent = "Consultando...";
+  try {
+    const res = await api(`/daytrade/operacoes/${ticker}/avaliar-ia`, { method: "POST" });
+    container.innerHTML = "";
+    container.hidden = false;
+    const box = el("div", "dt-conselho-box");
+    box.innerHTML = `<strong>Ação sugerida pela IA: ${res.acao_recomendada}</strong> (Preço atual: R$ ${res.preco_atual?.toFixed(2) ?? "—"} · ${res.variacao_trade_pct > 0 ? "+" : ""}${res.variacao_trade_pct}%)<br>${res.parecer_tatico}`;
+    if (res.novo_stop_sugerido) {
+      box.innerHTML += `<br><em>Novo Stop Loss sugerido: R$ ${res.novo_stop_sugerido.toFixed(2)}</em>`;
+    }
+    container.appendChild(box);
+  } catch (e) {
+    container.hidden = false;
+    container.textContent = `Erro ao consultar IA: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "💡 Conselho IA";
+  }
+}
+
+async function removerDayTrade(ticker) {
+  try {
+    await api(`/daytrade/operacoes/${ticker}`, { method: "DELETE" });
+    await carregarDayTrade();
+  } catch (e) {
+    alert(`Erro ao remover: ${e.message}`);
+  }
+}
+
+async function adicionarTradeMonitorado(ticker, precoCompra, alvoVenda) {
+  try {
+    await api("/daytrade/operacoes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ticker: ticker,
+        preco_compra: precoCompra,
+        preco_venda_meta: alvoVenda,
+      }),
+    });
+    await carregarDayTrade();
+    $("dt-info").textContent = `Trade em ${ticker} adicionado às operações monitoradas!`;
+    $("dt-info").style.color = "var(--pos)";
+  } catch (e) {
+    alert(`Erro ao adicionar trade: ${e.message}`);
+  }
+}
+
+async function escanearRadarDayTrade() {
+  const btn = $("btn-dt-radar-ia");
+  const statusBox = $("dt-radar-status");
+  const resultadoBox = $("dt-radar-resultado");
+  const statusMsg = $("dt-radar-status-msg");
+
+  btn.disabled = true;
+  statusBox.hidden = false;
+  resultadoBox.hidden = true;
+  statusMsg.textContent = "Coletando dados técnicos intraday (VWAP, IFR, médias) dos papéis mais líquidos...";
+
+  try {
+    const dados = await api("/daytrade/radar", { method: "POST" });
+    renderRadarDayTrade(dados);
+    statusBox.hidden = true;
+    resultadoBox.hidden = false;
+  } catch (e) {
+    statusBox.hidden = false;
+    statusMsg.textContent = `Falha ao processar radar de Day Trade: ${e.message}`;
+    statusMsg.style.color = "var(--neg)";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderRadarDayTrade(dados) {
+  const resumoBox = $("dt-mercado-resumo");
+  resumoBox.innerHTML = `<strong>Visão do Mercado no Pregão (IA):</strong> ${dados.resumo_mercado || "Análise concluída com sucesso."}`;
+
+  const grid = $("dt-oportunidades-grid");
+  grid.innerHTML = "";
+  const oportunidades = dados.oportunidades || [];
+
+  if (!oportunidades.length) {
+    grid.innerHTML = `<div class="hint">Nenhum setup com relação risco/retorno favorável encontrado neste momento.</div>`;
+  } else {
+    oportunidades.forEach((op) => {
+      const card = el("div", "dt-op-card");
+
+      const header = el("div", "dt-op-header");
+      const tickerBox = el("div");
+      tickerBox.appendChild(el("span", "dt-op-ticker", op.ticker));
+      const badgeTipo = el("span", op.tipo === "COMPRA" ? "dt-op-badge-compra" : "dt-op-badge-venda", op.tipo);
+      header.appendChild(tickerBox);
+      header.appendChild(badgeTipo);
+      card.appendChild(header);
+
+      const subHeader = el("div", "dt-op-estrategia", `${op.estrategia} · ${op.tempo_estimado || "Intraday"}`);
+      card.appendChild(subHeader);
+
+      const metricasGrid = el("div", "dt-op-metricas");
+      
+      const m1 = el("div", "dt-met-item");
+      m1.appendChild(el("span", "dt-met-rotulo", "Entrada"));
+      m1.appendChild(el("span", "dt-met-val", `R$ ${op.preco_entrada?.toFixed(2) ?? "—"}`));
+      metricasGrid.appendChild(m1);
+
+      const m2 = el("div", "dt-met-item");
+      m2.appendChild(el("span", "dt-met-rotulo", "Alvo (Gain)"));
+      const alvoPct = op.alvo_lucro_pct ? ` (+${op.alvo_lucro_pct.toFixed(1)}%)` : "";
+      m2.appendChild(el("span", "dt-met-val lucro", `R$ ${op.alvo_lucro?.toFixed(2) ?? "—"}${alvoPct}`));
+      metricasGrid.appendChild(m2);
+
+      const m3 = el("div", "dt-met-item");
+      m3.appendChild(el("span", "dt-met-rotulo", "Stop Loss"));
+      const stopPct = op.stop_loss_pct ? ` (-${Math.abs(op.stop_loss_pct).toFixed(1)}%)` : "";
+      m3.appendChild(el("span", "dt-met-val stop", `R$ ${op.stop_loss?.toFixed(2) ?? "—"}${stopPct}`));
+      metricasGrid.appendChild(m3);
+
+      const m4 = el("div", "dt-met-item");
+      m4.appendChild(el("span", "dt-met-rotulo", "Risco:Retorno"));
+      m4.appendChild(el("span", "dt-met-val", op.risco_retorno || "1:1.5"));
+      metricasGrid.appendChild(m4);
+
+      card.appendChild(metricasGrid);
+
+      const motivo = el("div", "dt-op-motivo", op.motivo_tecnico);
+      card.appendChild(motivo);
+
+      const footer = el("div", "dt-op-footer");
+      const forca = el("span", "dt-forca-tag", `Sinal: ${op.forca_sinal || "Média"}`);
+      const btnAdd = el("button", "btn small primary", "+ Monitorar este Trade");
+      btnAdd.type = "button";
+      btnAdd.addEventListener("click", () => {
+        adicionarTradeMonitorado(op.ticker, op.preco_entrada, op.alvo_lucro);
+        btnAdd.textContent = "✓ Adicionado!";
+        btnAdd.disabled = true;
+      });
+      footer.appendChild(forca);
+      footer.appendChild(btnAdd);
+      card.appendChild(footer);
+
+      grid.appendChild(card);
+    });
+  }
+
+  // Ativos a evitar
+  const evitarContainer = $("dt-evitar-container");
+  const evitarLista = $("dt-evitar-lista");
+  evitarLista.innerHTML = "";
+  const evitars = dados.evitar || [];
+  if (evitars.length) {
+    evitars.forEach((item) => {
+      const linha = el("div", "dt-evitar-item");
+      linha.innerHTML = `<span class="dt-evitar-ticker">${item.ticker}:</span> ${item.motivo}`;
+      evitarLista.appendChild(linha);
+    });
+    evitarContainer.hidden = false;
+  } else {
+    evitarContainer.hidden = true;
+  }
+}
+
+async function analisarAtivoIndividualDayTrade(evento) {
+  evento.preventDefault();
+  const ticker = $("dt-analisar-ticker").value.trim().toUpperCase();
+  if (!ticker) return;
+
+  const btn = $("btn-dt-analisar-ticker");
+  const statusBox = $("dt-analise-individual-status");
+  const resultadoBox = $("dt-analise-individual-box");
+
+  btn.disabled = true;
+  statusBox.hidden = false;
+  resultadoBox.hidden = true;
+
+  try {
+    const dados = await api("/daytrade/analisar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticker }),
+    });
+
+    statusBox.hidden = true;
+    resultadoBox.hidden = false;
+    renderAnaliseIndividualDayTrade(dados);
+  } catch (e) {
+    statusBox.hidden = false;
+    statusBox.innerHTML = `<span style="color:var(--neg);">Erro: ${e.message}</span>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderAnaliseIndividualDayTrade(dados) {
+  const box = $("dt-analise-individual-box");
+  box.innerHTML = "";
+
+  const header = el("div", "dt-op-header");
+  header.appendChild(el("span", "dt-op-ticker", `${dados.ticker} · Score Trade: ${dados.score_oportunidade ?? 5}/10`));
+  
+  let classeBadge = "dt-op-badge-compra";
+  if (dados.veredito === "VENDER") classeBadge = "dt-op-badge-venda";
+  else if (dados.veredito === "AGUARDAR") classeBadge = "daytrade-sinal alta";
+  
+  header.appendChild(el("span", classeBadge, dados.veredito));
+  box.appendChild(header);
+
+  if (dados.estrategia) {
+    box.appendChild(el("div", "dt-op-estrategia", `Estratégia: ${dados.estrategia}`));
+  }
+
+  const metricas = el("div", "dt-op-metricas");
+  metricas.style.margin = "10px 0";
+
+  const m1 = el("div", "dt-met-item");
+  m1.appendChild(el("span", "dt-met-rotulo", "Entrada"));
+  m1.appendChild(el("span", "dt-met-val", `R$ ${dados.preco_entrada?.toFixed(2) ?? "—"}`));
+  metricas.appendChild(m1);
+
+  const m2 = el("div", "dt-met-item");
+  m2.appendChild(el("span", "dt-met-rotulo", "Alvo (Gain)"));
+  m2.appendChild(el("span", "dt-met-val lucro", `R$ ${dados.alvo_lucro?.toFixed(2) ?? "—"}`));
+  metricas.appendChild(m2);
+
+  const m3 = el("div", "dt-met-item");
+  m3.appendChild(el("span", "dt-met-rotulo", "Stop Loss"));
+  m3.appendChild(el("span", "dt-met-val stop", `R$ ${dados.stop_loss?.toFixed(2) ?? "—"}`));
+  metricas.appendChild(m3);
+
+  const m4 = el("div", "dt-met-item");
+  m4.appendChild(el("span", "dt-met-rotulo", "Risco:Retorno"));
+  m4.appendChild(el("span", "dt-met-val", dados.risco_retorno || "1:1.5"));
+  metricas.appendChild(m4);
+
+  box.appendChild(metricas);
+
+  const racional = el("div", "dt-op-motivo");
+  racional.innerHTML = `<strong>Racional Técnico:</strong> ${dados.racional_tecnico}<br><strong>Gatilho de Confirmação:</strong> ${dados.gatilho_confirmacao}`;
+  box.appendChild(racional);
+
+  if (dados.veredito === "COMPRAR" || dados.veredito === "VENDER") {
+    const btnAdd = el("button", "btn small primary", "+ Adicionar às Minhas Operações");
+    btnAdd.style.marginTop = "12px";
+    btnAdd.type = "button";
+    btnAdd.addEventListener("click", () => {
+      adicionarTradeMonitorado(dados.ticker, dados.preco_entrada, dados.alvo_lucro);
+      btnAdd.textContent = "✓ Adicionado!";
+      btnAdd.disabled = true;
+    });
+    box.appendChild(btnAdd);
+  }
+}
+
 async function adicionarDayTrade(evento) {
   evento.preventDefault();
-  const box = $("regra-erro");
-  box.hidden = true;
-
   const corpo = {
-    ticker: $("dt-ativo").value.trim(),
+    ticker: $("dt-ativo").value.trim().toUpperCase(),
     preco_compra: Number($("dt-preco-compra").value),
     variacao_venda_pct: Number($("dt-variacao").value),
     preco_venda_meta: $("dt-meta-venda").value ? Number($("dt-meta-venda").value) : undefined,
@@ -1124,8 +1412,7 @@ async function adicionarDayTrade(evento) {
     $("dt-meta-venda").value = "";
     await carregarDayTrade();
   } catch (e) {
-    box.textContent = e.message;
-    box.hidden = false;
+    alert(`Erro ao adicionar operação: ${e.message}`);
   }
 }
 
@@ -1141,7 +1428,7 @@ async function avaliarDayTrade() {
       info.textContent = `${sinais.length} sinal(is) de ${sinais[0].sinal.toLowerCase()}`;
       info.style.color = sinais[0].sinal === "VENDA" ? "var(--pos)" : "var(--warn)";
     } else {
-      info.textContent = "sem sinais de compra/venda";
+      info.textContent = "Nenhum preço atingiu a meta ainda.";
       info.style.color = "var(--text-dim)";
     }
     await carregarDayTrade();
@@ -1149,7 +1436,7 @@ async function avaliarDayTrade() {
     $("dt-info").textContent = e.message;
   } finally {
     btn.disabled = false;
-    btn.textContent = "Verificar agora";
+    btn.textContent = "Verificar Preços";
   }
 }
 
@@ -1186,5 +1473,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   $("daytrade-form").addEventListener("submit", adicionarDayTrade);
   $("btn-dt-avaliar").addEventListener("click", avaliarDayTrade);
+  $("btn-dt-radar-ia").addEventListener("click", escanearRadarDayTrade);
+  $("dt-analisar-form").addEventListener("submit", analisarAtivoIndividualDayTrade);
   init();
 });
