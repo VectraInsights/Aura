@@ -48,6 +48,7 @@ from src.ia.gemini import ErroIA  # noqa: E402
 from src.perfil import QUESTOES, perfil_completo, resumo_para_ia  # noqa: E402
 from src.screen import PERFIS_TELA  # noqa: E402
 from src.projecao import projetar, sugerir_operacao  # noqa: E402
+from src.daytrade.monitor import MonitorDayTrade  # noqa: E402
 
 app = FastAPI(
     title="Aura",
@@ -710,6 +711,76 @@ def projecao(
         raise
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Falha na projeção: {exc}") from exc
+
+
+# ============================================================================
+# DAY TRADE — área separada dos investimentos de longo prazo
+# ============================================================================
+
+@router_protegido.get("/daytrade/operacoes")
+def daytrade_operacoes() -> dict:
+    """Lista todas as operações de day trade cadastradas."""
+    monitor = MonitorDayTrade()
+    return {"operacoes": monitor.listar_operacoes()}
+
+
+@router_protegido.post("/daytrade/operacoes")
+async def daytrade_adicionar_operacao(payload: dict) -> dict:
+    """Cadastra uma operação de day trade para monitoramento.
+
+    Corpo: {"ticker": "PETR4", "preco_compra": 30.00, "variacao_venda_pct": 2.0}
+    ou {"ticker": "PETR4", "preco_compra": 30.00, "preco_venda_meta": 30.60}
+    """
+    monitor = MonitorDayTrade()
+
+    ticker = str(payload.get("ticker", "")).strip()
+    if not ticker:
+        raise HTTPException(status_code=400, detail="Informe o ticker.")
+
+    try:
+        preco_compra = float(payload.get("preco_compra"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="preco_compra inválido.")
+
+    variacao_venda_pct = payload.get("variacao_venda_pct")
+    preco_venda_meta = payload.get("preco_venda_meta")
+
+    if variacao_venda_pct is not None:
+        try:
+            variacao_venda_pct = float(variacao_venda_pct)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="variacao_venda_pct inválida.")
+
+    if preco_venda_meta is not None:
+        try:
+            preco_venda_meta = float(preco_venda_meta)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="preco_venda_meta inválido.")
+
+    op = monitor.adicionar_operacao(
+        ticker=ticker,
+        preco_compra=preco_compra,
+        variacao_venda_pct=variacao_venda_pct,
+        preco_venda_meta=preco_venda_meta,
+    )
+    return {"operacao": op.__dict__}
+
+
+@router_protegido.delete("/daytrade/operacoes/{ticker}")
+def daytrade_remover_operacao(ticker: str) -> dict:
+    """Remove uma operação de day trade."""
+    monitor = MonitorDayTrade()
+    removida = monitor.remover_operacao(ticker)
+    if not removida:
+        raise HTTPException(status_code=404, detail="Operação não encontrada.")
+    return {"removida": ticker}
+
+
+@router_protegido.post("/daytrade/avaliar")
+def daytrade_avaliar(notificar: bool = Query(True, description="Enviar notificações por email/WhatsApp")) -> dict:
+    """Avalia preços atuais das operações de day trade e gera sinais de venda."""
+    monitor = MonitorDayTrade()
+    return monitor.avaliar(notificar=notificar)
 
 
 @router_protegido.post("/sugerir/{ticker}/enviar")
