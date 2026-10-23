@@ -196,7 +196,10 @@ def cmd_sugestoes(args: argparse.Namespace) -> int:
     tickers = args.tickers or []
     motor = Motor()
     print(f"\n\033[1mMonitor de Sugestões Aura\033[0m")
-    print(f"Tickers: {', '.join(tickers) if tickers else 'nenhum (use --ticker)'}")
+    if args.auto:
+        print("Modo: automático (descobre tickers da triagem)")
+    else:
+        print(f"Tickers: {', '.join(tickers) if tickers else 'nenhum (use --ticker ou --auto)'}")
     print(f"Intervalo: {args.intervalo}s · Taxa de desconto: {args.taxa_desconto}")
     print(f"Limiar upside: {args.limiar_upside}% · Limiar downside: {args.limiar_downside}%")
     if motor.notificador._email_disponivel():
@@ -213,6 +216,7 @@ def cmd_sugestoes(args: argparse.Namespace) -> int:
                 notificar=True,
                 limiar_upside=args.limiar_upside,
                 limiar_downside=args.limiar_downside,
+                auto=args.auto,
             )
             for env in resultado.get("enviadas", []):
                 print(
@@ -477,6 +481,7 @@ def main() -> int:
 
     p = sub.add_parser("sugestoes", help="Monitora sugestões de compra/venda em laço contínuo")
     p.add_argument("--ticker", action="append", default=[], help="Ticker para acompanhar (pode repetir)")
+    p.add_argument("--auto", action="store_true", help="Descobre tickers automaticamente da triagem")
     p.add_argument("--intervalo", type=int, default=60, help="Segundos entre verificações")
     p.add_argument("--taxa-desconto", type=float, default=0.10, help="Taxa de desconto para o Modelo de Gordon")
     p.add_argument("--limiar-upside", type=float, default=15.0, help="Limiar de upside para notificar compra")
