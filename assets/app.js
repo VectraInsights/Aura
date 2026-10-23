@@ -1060,6 +1060,16 @@ function renderParecer(ticker, dados, compacto) {
   if (!compacto) alvo.scrollTop = 0;
 }
 
+// ------------------------------------------------------------------ abas
+function trocarAba(nome) {
+  document.querySelectorAll(".aba-btn").forEach((b) => {
+    b.classList.toggle("ativa", b.dataset.aba === nome);
+  });
+  document.getElementById("aba-investimentos").hidden = nome !== "investimentos";
+  document.getElementById("aba-daytrade").hidden = nome !== "daytrade";
+  if (nome === "daytrade") carregarDayTrade();
+}
+
 // ------------------------------------------------------------------ day trade
 async function carregarDayTrade() {
   try {
@@ -1171,8 +1181,10 @@ document.addEventListener("DOMContentLoaded", () => {
     $("regra-valor2").classList.toggle("oculto", e.target.value !== "entre");
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") fecharDrawer(); });
+  document.querySelectorAll(".aba-btn").forEach((btn) => {
+    btn.addEventListener("click", () => trocarAba(btn.dataset.aba));
+  });
   $("daytrade-form").addEventListener("submit", adicionarDayTrade);
   $("btn-dt-avaliar").addEventListener("click", avaliarDayTrade);
-  await carregarDayTrade();
   init();
 });
