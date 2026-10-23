@@ -1060,6 +1060,89 @@ function renderParecer(ticker, dados, compacto) {
   if (!compacto) alvo.scrollTop = 0;
 }
 
+// ------------------------------------------------------------------ day trade
+async function carregarDayTrade() {
+  try {
+    const dados = await api("/daytrade/operacoes");
+    renderDayTrade(dados.operacoes || []);
+  } catch (e) { /* silencioso */ }
+}
+
+function renderDayTrade(operacoes) {
+  const lista = $("daytrade-lista");
+  lista.innerHTML = "";
+  if (!operacoes.length) {
+    lista.appendChild(el("div", "hint", "Nenhuma operação de day trade ainda."));
+    return;
+  }
+  operacoes.forEach((op) => {
+    const item = el("div", "daytrade-item");
+    const esquerda = el("div");
+    esquerda.appendChild(el("div", null, op.ticker));
+    esquerda.appendChild(el("div", "hint", `Compra: R$ ${op.preco_compra?.toFixed(2) ?? "—"}`));
+    if (op.preco_venda_meta) {
+      esquerda.appendChild(el("div", "hint", `Meta: R$ ${op.preco_venda_meta.toFixed(2)}`));
+    }
+    const sinal = el("div", "daytrade-sinal", op.status === "aberta" ? "aberta" : "fechada");
+    sinal.classList.add(op.status === "aberta" ? "alta" : "venha");
+    item.appendChild(esquerda);
+    item.appendChild(sinal);
+    lista.appendChild(item);
+  });
+}
+
+async function adicionarDayTrade(evento) {
+  evento.preventDefault();
+  const box = $("regra-erro");
+  box.hidden = true;
+
+  const corpo = {
+    ticker: $("dt-ativo").value.trim(),
+    preco_compra: Number($("dt-preco-compra").value),
+    variacao_venda_pct: Number($("dt-variacao").value),
+    preco_venda_meta: $("dt-meta-venda").value ? Number($("dt-meta-venda").value) : undefined,
+  };
+
+  try {
+    await api("/daytrade/operacoes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(corpo),
+    });
+    $("dt-ativo").value = "";
+    $("dt-preco-compra").value = "";
+    $("dt-meta-venda").value = "";
+    await carregarDayTrade();
+  } catch (e) {
+    box.textContent = e.message;
+    box.hidden = false;
+  }
+}
+
+async function avaliarDayTrade() {
+  const btn = $("btn-dt-avaliar");
+  btn.disabled = true;
+  btn.textContent = "Verificando…";
+  try {
+    const dados = await api("/daytrade/avaliar", { method: "POST" });
+    const sinais = dados.sinais || [];
+    const info = $("dt-info");
+    if (sinais.length) {
+      info.textContent = `${sinais.length} sinal(is) de ${sinais[0].sinal.toLowerCase()}`;
+      info.style.color = sinais[0].sinal === "VENDA" ? "var(--pos)" : "var(--warn)";
+    } else {
+      info.textContent = "sem sinais de compra/venda";
+      info.style.color = "var(--text-dim)";
+    }
+    await carregarDayTrade();
+  } catch (e) {
+    $("dt-info").textContent = e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Verificar agora";
+  }
+}
+
 // ------------------------------------------------------------------ eventos
 document.addEventListener("DOMContentLoaded", () => {
   $("perfil").addEventListener("change", atualizarPerfilDescricao);
@@ -1088,5 +1171,8 @@ document.addEventListener("DOMContentLoaded", () => {
     $("regra-valor2").classList.toggle("oculto", e.target.value !== "entre");
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") fecharDrawer(); });
+  $("daytrade-form").addEventListener("submit", adicionarDayTrade);
+  $("btn-dt-avaliar").addEventListener("click", avaliarDayTrade);
+  await carregarDayTrade();
   init();
 });

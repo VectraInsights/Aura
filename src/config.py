@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 RAIZ = Path(__file__).resolve().parent.parent
 
 #: Versão do app. Aparece em /api/health para saber qual build está no ar.
-VERSAO_APP = "1.0.1"
+VERSAO_APP = "1.0.3"
 
 # .env do projeto tem precedência; sem overwrite para respeitar variáveis já setadas.
 load_dotenv(RAIZ / ".env", override=False)

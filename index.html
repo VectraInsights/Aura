@@ -14,7 +14,7 @@
   <div class="brand">
     <span class="brand-mark">◈</span>
     <div>
-      <h1>Aura</h1>
+      <h1>Aura <span class="versao" id="versao-app">v1.0.3</span></h1>
       <p>IA de análise de investimentos · B3</p>
     </div>
   </div>
@@ -129,6 +129,38 @@
         <li>As aprovadas vão para o <b>Gemini</b> com balanço, DRE e proventos reais.</li>
       </ol>
       <p class="hint">Ferramenta de estudo. Não é recomendação de investimento.</p>
+    </section>
+
+    <section class="card">
+      <h2>Day Trade</h2>
+      <p class="hint">Acompanhe preços intraday e receba aviso quando atingir a meta de venda. Posições fecham no mesmo dia.</p>
+
+      <form id="daytrade-form" class="daytrade-form">
+        <div class="regra-linha">
+          <input type="text" id="dt-ativo" placeholder="PETR4, VALE3, ITUB4…" required>
+        </div>
+        <div class="regra-linha">
+          <input type="number" id="dt-preco-compra" step="any" placeholder="Preço de compra (R$)" required>
+        </div>
+        <div class="regra-linha">
+          <select id="dt-variacao">
+            <option value="1.0">+1,0% de lucro</option>
+            <option value="2.0">+2,0% de lucro</option>
+            <option value="3.0">+3,0% de lucro</option>
+            <option value="5.0">+5,0% de lucro</option>
+            <option value="10.0">+10,0% de lucro</option>
+          </select>
+          <input type="number" id="dt-meta-venda" step="any" placeholder="Ou preço de venda fixo (R$)">
+        </div>
+        <button class="btn primary" type="submit">Adicionar operação</button>
+      </form>
+
+      <div class="daytrade-lista" id="daytrade-lista"></div>
+
+      <div class="daytrade-rodape">
+        <button class="btn small" id="btn-dt-avaliar" type="button">Verificar agora</button>
+        <span class="hint" id="dt-info"></span>
+      </div>
     </section>
   </aside>
 

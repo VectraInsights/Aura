@@ -20,6 +20,17 @@
   --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
+.versao {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-faint);
+  background: var(--line);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 * { box-sizing: border-box; }
 
 /* O atributo hidden precisa vencer o display:flex/block dos componentes. */
@@ -685,3 +696,12 @@ tbody tr.sel { background: rgba(34, 211, 238, 0.07); }
   .table-wrap { max-height: none; }
   .table-tools { flex-direction: column; align-items: stretch; }
 }
+
+/* ---------------------------------------------------------------- day trade */
+.daytrade-form { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.daytrade-lista { max-height: 200px; overflow-y: auto; margin-bottom: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card-2); }
+.daytrade-item { display: flex; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 0.85rem; }
+.daytrade-item:last-child { border-bottom: none; }
+.daytrade-sinal { font-weight: 700; font-size: 0.8rem; padding: 2px 8px; border-radius: 4px; }
+.daytrade-sinal.venha { background: rgba(52, 211, 153, 0.15); color: var(--pos); }
+.daytrade-sinal.alta { background: rgba(251, 191, 36, 0.15); color: var(--warn); }
