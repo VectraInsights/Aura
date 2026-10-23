@@ -645,6 +645,9 @@ async function init() {
 
   try {
     const saude = await api("/health");
+    if (saude.versao && $("versao-app")) {
+      $("versao-app").textContent = `v${saude.versao}`;
+    }
     setStatus(saude.ia_configurada ? `IA pronta · ${saude.modelo_padrao}` : "IA não configurada",
       saude.ia_configurada ? "ok" : "fail");
   } catch (e) {

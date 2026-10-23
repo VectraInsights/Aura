@@ -59,7 +59,7 @@ from src.daytrade import (  # noqa: E402
 app = FastAPI(
     title="Aura",
     description="IA de análise de investimentos na B3 — triagem fundamentalista e parecer técnico.",
-    version="1.0.0",
+    version=VERSAO_APP,
 )
 
 app.add_middleware(
